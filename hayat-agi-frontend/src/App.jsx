@@ -22,6 +22,7 @@ import Dashboard from './pages/Dashboard'; // Admin Layout (Sidebar + Header)
 import GatewayManager from './pages/GatewayManager'; // Admin Gateway Listesi (CRUD)
 import AddGateway from './pages/AddGateway'; // Admin Ekleme Formu
 import LiveMap from './pages/LiveMap'; // Canlı Harita Sayfası
+import Incidents from './pages/Incidents'; // Olaylar (AI fusion'dan)
 import ReportedIssues from './pages/ReportedIssues'; // Bildirilen Sorunlar
 
 
@@ -100,6 +101,9 @@ function App() {
               <Route path="add-gateway" element={<AddGateway />} />
 
               <Route path="harita" element={<LiveMap />} />
+
+              {/* AI fusion'dan gelen olaylar — canlı harita + liste */}
+              <Route path="incidents" element={<Incidents />} />
 
               {/* 4. Bildirilen Sorunlar */}
               <Route path="sorunlar" element={<ReportedIssues />} />
