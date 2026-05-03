@@ -321,7 +321,16 @@ exports.addDisasterEvent = async (req, res) => {
       return res.status(400).json({ message: 'Olay tipi (type) zorunludur.' });
     }
 
-    const gateway = await Gateway.findOne({ _id: id, owner: req.user._id });
+    // Mobile sends BLE MAC or serialNumber as :id (not the Mongo ObjectId).
+    // Try ObjectId first, fall back to serialNumber lookup.
+    const mongoose = require('mongoose');
+    const lookup = { owner: req.user._id };
+    if (mongoose.isValidObjectId(id)) {
+      lookup.$or = [{ _id: id }, { serialNumber: id }];
+    } else {
+      lookup.serialNumber = id;
+    }
+    const gateway = await Gateway.findOne(lookup);
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
     }
