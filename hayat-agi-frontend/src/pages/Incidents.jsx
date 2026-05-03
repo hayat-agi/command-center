@@ -840,7 +840,7 @@ const Incidents = () => {
       {error && <MuiAlert severity="error" sx={{ mb: 2 }}>{error}</MuiAlert>}
 
       <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-        <Grid item xs={12} md={8} sx={{ minHeight: 500 }}>
+        <Grid size={{ xs: 12, md: 8 }} sx={{ minHeight: 500 }}>
           <Paper sx={{ height: '100%', minHeight: 500, position: 'relative', overflow: 'hidden' }}>
             <MapComponent
               gateways={mapItems}
@@ -857,7 +857,7 @@ const Incidents = () => {
           </Paper>
         </Grid>
 
-        <Grid item xs={12} md={4} sx={{ minHeight: 500, height: '100%', overflow: 'hidden' }}>
+        <Grid size={{ xs: 12, md: 4 }} sx={{ minHeight: 500, height: '100%', overflow: 'hidden' }}>
           {selectedIncident ? (
             <Box sx={{ height: '100%', overflow: 'auto' }}>
               <IncidentDetail
