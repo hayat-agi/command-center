@@ -5,6 +5,7 @@ const gatewayRoutes = require('./routes/gatewayRoutes');
 const userRoutes = require('./routes/userRoutes');
 const issueRoutes = require('./routes/issueRoutes');
 const metadataRoutes = require('./routes/metadataRoutes');
+const incidentRoutes = require('./routes/incidentRoutes');
 const connectDB = require('./config/db');
 const path = require('path');
 
@@ -37,6 +38,7 @@ app.use('/api/gateways', gatewayRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/metadata', metadataRoutes);
+app.use('/api/admin/incidents', incidentRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
