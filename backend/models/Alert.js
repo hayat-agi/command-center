@@ -41,17 +41,20 @@ const alertSchema = new Schema(
 
     // Delivery path of this alert. 'mesh' = arrived via gateway uplink
     // (LoRa hop chain → ESP32-Gateway WiFi → backend). 'direct' = phone
-    // POSTed straight to backend bypassing the mesh. 'unknown' = legacy.
+    // POSTed straight to backend bypassing the mesh.
+    // Legacy alerts predating this field read back as `undefined`.
     source: {
       type: String,
-      enum: ['mesh', 'direct', 'unknown'],
-      default: 'unknown',
+      enum: ['mesh', 'direct'],
+      default: 'direct',
       index: true,
     },
     // Mesh diagnostics (only populated when source === 'mesh').
-    mesh_hops: { type: Number, default: null },
-    mesh_src_addr: { type: String, default: null },
-    mesh_msg_id: { type: String, default: null },
+    // camelCase to match the firmware uplink JSON body and the API contract
+    // exposed to the frontend.
+    meshHops:    { type: Number, default: null },
+    meshSrcAddr: { type: String, default: null },
+    meshMsgId:   { type: String, default: null },
 
     // Written back by the fusion classifier once an alert has been scored.
     // Stays null until the model has run.

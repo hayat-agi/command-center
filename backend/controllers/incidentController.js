@@ -90,10 +90,10 @@ exports.getIncidentMessages = async (req, res) => {
           receivedAt: a.createdAt,
           location: a.location || null,
           classification: a.classification || null,
-          source: a.source || 'unknown',
-          meshHops: a.mesh_hops ?? null,
-          meshSrcAddr: a.mesh_src_addr || null,
-          meshMsgId: a.mesh_msg_id || null,
+          source: a.source || null,
+          meshHops: a.meshHops ?? null,
+          meshSrcAddr: a.meshSrcAddr || null,
+          meshMsgId: a.meshMsgId || null,
         };
       }),
     });
