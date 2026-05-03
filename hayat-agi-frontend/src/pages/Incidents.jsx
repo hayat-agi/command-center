@@ -17,11 +17,8 @@ import {
   Divider,
   alpha,
   CircularProgress,
-  LinearProgress,
   Alert as MuiAlert,
   Button,
-  ToggleButton,
-  ToggleButtonGroup,
   Avatar,
   Dialog,
   DialogTitle,
@@ -34,13 +31,10 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
 import GroupIcon from '@mui/icons-material/Group';
 import ChildCareIcon from '@mui/icons-material/ChildCare';
 import ElderlyIcon from '@mui/icons-material/Elderly';
 import PregnantWomanIcon from '@mui/icons-material/PregnantWoman';
-import VerifiedIcon from '@mui/icons-material/Verified';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
@@ -219,13 +213,6 @@ const CATEGORY_ICONS = {
   GENERAL: InfoOutlinedIcon,
 };
 
-const CONFIRMATION = {
-  CONFIRMED: { label: 'Onaylandı', color: 'success', icon: VerifiedIcon, hint: 'En az bir self-report ve bir witness-report eşleşti.' },
-  LIKELY: { label: 'Olası', color: 'info', icon: HelpOutlineIcon, hint: 'Birden fazla witness-report var ama doğrudan etkilenen yok.' },
-  UNCONFIRMED: { label: 'Onaylanmadı', color: 'warning', icon: HelpOutlineIcon, hint: 'Tek mesaj — kuvvetlenmesi bekleniyor.' },
-  UNVERIFIED: { label: 'Doğrulanmadı', color: 'default', icon: HelpOutlineIcon, hint: 'Sadece bilgi mesajı; tehlike kanıtı yok.' },
-};
-
 // ---- Helpers ---------------------------------------------------------------
 
 const incidentToGatewayShape = (incident) => ({
@@ -238,8 +225,13 @@ const incidentToGatewayShape = (incident) => ({
   __raw: incident,
 });
 
-const sortByScore = (a, b) => (b.score ?? 0) - (a.score ?? 0);
 const sortByTime = (a, b) => new Date(b.last_event_at || b.created_at || 0) - new Date(a.last_event_at || a.created_at || 0);
+const sortByUrgencyThenTime = (a, b) => {
+  const ua = URGENCY_ORDER[a.max_urgency] ?? 0;
+  const ub = URGENCY_ORDER[b.max_urgency] ?? 0;
+  if (ua !== ub) return ub - ua;
+  return sortByTime(a, b);
+};
 
 const fromNowSafe = (ts) => (ts ? dayjs(ts).fromNow() : '—');
 
@@ -317,89 +309,54 @@ const CategoryChip = ({ code, size = 'small' }) => {
 
 const IncidentCard = ({ incident, isSelected, onClick }) => {
   const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
-  const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
+  const summary = incident.auto_summary || `Olay ${incident.id?.slice(0, 8)}`;
+  const cats = (incident.categories || []).slice(0, 3);
   return (
     <Card
       onClick={onClick}
       sx={{
         cursor: 'pointer',
-        borderLeft: `4px solid ${color}`,
-        boxShadow: isSelected ? `0 0 0 2px ${color}` : undefined,
-        transition: 'box-shadow 0.15s',
-        '&:hover': { boxShadow: `0 0 0 2px ${alpha(color, 0.5)}` },
+        borderLeft: `3px solid ${color}`,
+        bgcolor: isSelected ? alpha(color, 0.08) : 'background.paper',
+        boxShadow: isSelected ? `0 0 0 2px ${color}` : 'none',
+        transition: 'background-color 0.12s, box-shadow 0.12s',
+        '&:hover': { bgcolor: alpha(color, 0.04) },
       }}
     >
-      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
-          <Chip
-            label={URGENCY_LABELS[incident.max_urgency] || incident.max_urgency}
-            size="small"
-            sx={{ bgcolor: color, color: 'white', fontWeight: 700, height: 22 }}
-          />
-          <Chip label={conf.label} size="small" color={conf.color} variant="outlined" sx={{ height: 22 }} />
-          <VulnerableSignals incident={incident} />
-          <Box sx={{ flex: 1 }} />
-          <Typography variant="caption" color="text.secondary">
+      <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
+          <Typography
+            variant="body2"
+            sx={{
+              flex: 1,
+              fontWeight: 500,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {summary}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
             {fromNowSafe(incident.last_event_at || incident.created_at)}
           </Typography>
         </Stack>
-        <Typography variant="body2" sx={{ mb: 0.75, fontWeight: 500 }}>
-          {incident.auto_summary || `Olay ${incident.id?.slice(0, 8)}`}
-        </Typography>
-        <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mb: 0.75 }}>
-          {(incident.categories || []).slice(0, 3).map((c) => (
+        <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" sx={{ pl: 2 }}>
+          {cats.map((c) => (
             <CategoryChip key={c} code={c} />
           ))}
-        </Stack>
-        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <VulnerableSignals incident={incident} />
+          <Box sx={{ flex: 1 }} />
           <Stack direction="row" alignItems="center" spacing={0.5}>
-            <GroupIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+            <GroupIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
             <Typography variant="caption" color="text.secondary">
               {incident.n_messages ?? 0}
             </Typography>
           </Stack>
-          <Box sx={{ flex: 1 }} />
-          <Typography variant="caption" sx={{ fontWeight: 700 }} color={color}>
-            {incident.score?.toFixed(2) ?? '—'}
-          </Typography>
         </Stack>
       </CardContent>
     </Card>
-  );
-};
-
-const ScoreBreakdown = ({ breakdown }) => {
-  if (!breakdown) return null;
-  const rows = [
-    { key: 'base', label: 'Aciliyet × Onay' },
-    { key: 'message_count_bonus', label: 'Mesaj sayısı bonusu' },
-    { key: 'vulnerable_group_bonus', label: 'Risk grubu bonusu' },
-    { key: 'hazard_bonus', label: 'Tehlike bonusu' },
-  ];
-  const max = Math.max(...rows.map((r) => breakdown[r.key] || 0), 1);
-  return (
-    <Stack spacing={0.75}>
-      {rows.map((r) => {
-        const val = breakdown[r.key] || 0;
-        return (
-          <Box key={r.key}>
-            <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.25 }}>
-              <Typography variant="caption" color="text.secondary">
-                {r.label}
-              </Typography>
-              <Typography variant="caption" fontWeight={600}>
-                {val.toFixed(2)}
-              </Typography>
-            </Stack>
-            <LinearProgress
-              variant="determinate"
-              value={(val / max) * 100}
-              sx={{ height: 4, borderRadius: 2, opacity: val > 0 ? 1 : 0.3 }}
-            />
-          </Box>
-        );
-      })}
-    </Stack>
   );
 };
 
@@ -481,8 +438,6 @@ const IncidentMessages = ({ incidentId, color }) => {
 
 const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
   const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
-  const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
-  const ConfIcon = conf.icon;
   const [closeOpen, setCloseOpen] = useState(false);
   const [falseAlarm, setFalseAlarm] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -525,9 +480,6 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
               Kapat
             </Button>
           )}
-          <Typography variant="h5" fontWeight={800}>
-            {incident.score?.toFixed(2) ?? '—'}
-          </Typography>
         </Stack>
       </Box>
 
@@ -556,16 +508,6 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
         </Typography>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-          <Chip
-            icon={<ConfIcon sx={{ fontSize: 14 }} />}
-            label={conf.label}
-            color={conf.color}
-            size="small"
-          />
-          <Tooltip title={conf.hint}>
-            <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-          </Tooltip>
-          <Box sx={{ flex: 1 }} />
           <VulnerableSignals incident={incident} size="medium" />
         </Stack>
 
@@ -601,13 +543,6 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
           <Chip label={`${incident.n_witness_reports} tanık`} size="small" variant="outlined" />
           <Chip label={`${incident.n_info} bilgi`} size="small" variant="outlined" />
         </Stack>
-
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-          SKOR DETAYI
-        </Typography>
-        <Box sx={{ mb: 2 }}>
-          <ScoreBreakdown breakdown={incident.score_breakdown} />
-        </Box>
 
         {incident.dispatched_teams && incident.dispatched_teams.length > 0 && (
           <>
@@ -708,7 +643,6 @@ const Incidents = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [statusFilter, setStatusFilter] = useState('open');
-  const [sortBy, setSortBy] = useState('score');
 
   const loadIncidents = useCallback(async (isInitial = false) => {
     try {
@@ -739,10 +673,8 @@ const Incidents = () => {
   }, [loadIncidents]);
 
   const sortedIncidents = useMemo(() => {
-    const sorted = [...incidents];
-    sorted.sort(sortBy === 'score' ? sortByScore : sortByTime);
-    return sorted;
-  }, [incidents, sortBy]);
+    return [...incidents].sort(sortByUrgencyThenTime);
+  }, [incidents]);
 
   const selectedIncident = selectedId ? incidents.find((i) => i.id === selectedId) : null;
   const sourceGateway = useMemo(
@@ -851,10 +783,6 @@ const Incidents = () => {
               <MenuItem value="all">Hepsi</MenuItem>
             </Select>
           </FormControl>
-          <ToggleButtonGroup size="small" exclusive value={sortBy} onChange={(_, v) => v && setSortBy(v)}>
-            <ToggleButton value="score">Skor</ToggleButton>
-            <ToggleButton value="time">Zaman</ToggleButton>
-          </ToggleButtonGroup>
           {lastUpdate && (
             <Tooltip title={`Son güncelleme: ${dayjs(lastUpdate).format('HH:mm:ss')}`}>
               <Stack direction="row" alignItems="center" spacing={0.5}>
