@@ -471,10 +471,29 @@ const IncidentMessages = ({ incidentId, color }) => {
   );
 };
 
-const IncidentDetail = ({ incident, onBack, sourceGateway }) => {
+const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
   const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
   const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
   const ConfIcon = conf.icon;
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [falseAlarm, setFalseAlarm] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const isOpen = (incident.status || '').toLowerCase() === 'open';
+
+  const doClose = async () => {
+    setClosing(true);
+    try {
+      await closeIncident(incident.id, falseAlarm);
+      setCloseOpen(false);
+      setFalseAlarm(false);
+      if (onClosed) onClosed();
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || 'Olay kapatılamadı');
+    } finally {
+      setClosing(false);
+    }
+  };
 
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
@@ -487,11 +506,42 @@ const IncidentDetail = ({ incident, onBack, sourceGateway }) => {
             {URGENCY_LABELS[incident.max_urgency]}
           </Typography>
           <Box sx={{ flex: 1 }} />
+          {isOpen && (
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<CheckCircleOutlineIcon />}
+              onClick={() => setCloseOpen(true)}
+              sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.32)' } }}
+            >
+              Kapat
+            </Button>
+          )}
           <Typography variant="h5" fontWeight={800}>
             {incident.score?.toFixed(2) ?? '—'}
           </Typography>
         </Stack>
       </Box>
+
+      <Dialog open={closeOpen} onClose={() => !closing && setCloseOpen(false)}>
+        <DialogTitle>Olayı kapat</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 1 }}>
+            "{incident.auto_summary || incident.id}" olayını kapatmak üzeresiniz.
+            Açık olay listesinden kalkacak ve haritada gösterilmeyecek.
+          </DialogContentText>
+          <FormControlLabel
+            control={<Checkbox checked={falseAlarm} onChange={(e) => setFalseAlarm(e.target.checked)} />}
+            label="Yanlış alarm olarak işaretle"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCloseOpen(false)} disabled={closing}>İptal</Button>
+          <Button onClick={doClose} variant="contained" color="error" disabled={closing}>
+            {closing ? 'Kapatılıyor...' : 'Kapat'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <CardContent sx={{ flex: 1 }}>
         <Typography variant="body1" fontWeight={500} sx={{ mb: 2 }}>
           {incident.auto_summary || `Olay ${incident.id?.slice(0, 8)}`}
@@ -868,6 +918,7 @@ const Incidents = () => {
                 incident={selectedIncident}
                 onBack={() => setSelectedId(null)}
                 sourceGateway={sourceGateway}
+                onClosed={() => { setSelectedId(null); loadIncidents(false); }}
               />
             </Box>
           ) : (

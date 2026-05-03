@@ -4,7 +4,11 @@ const Alert = require('../models/Alert');
 const Gateway = require('../models/Gateway');
 
 const AI_FUSION_URL = process.env.AI_FUSION_URL || 'http://localhost:8000';
+const FUSION_INGEST_TOKEN = process.env.FUSION_INGEST_TOKEN || '';
 const PROXY_TIMEOUT_MS = 5000;
+
+const upstreamHeaders = () =>
+  FUSION_INGEST_TOKEN ? { Authorization: `Bearer ${FUSION_INGEST_TOKEN}` } : {};
 
 // GET /api/admin/incidents?status_filter=open
 //
@@ -15,6 +19,7 @@ exports.listIncidents = async (req, res) => {
   try {
     const upstream = await axios.get(`${AI_FUSION_URL}/incidents`, {
       params: req.query,
+      headers: upstreamHeaders(),
       timeout: PROXY_TIMEOUT_MS,
     });
     res.status(upstream.status).json(upstream.data);
@@ -37,6 +42,7 @@ exports.getIncidentMessages = async (req, res) => {
   const { id } = req.params;
   try {
     const upstream = await axios.get(`${AI_FUSION_URL}/incidents/${id}`, {
+      headers: upstreamHeaders(),
       timeout: PROXY_TIMEOUT_MS,
     });
     const eventIds = upstream.data?.event_ids || [];
@@ -94,6 +100,32 @@ exports.getIncidentMessages = async (req, res) => {
     const status = err.response?.status ?? 502;
     res.status(status >= 500 ? 502 : status).json({
       message: 'Olay mesajları alınamadı',
+      detail: err.response?.data ?? err.message,
+    });
+  }
+};
+
+// POST /api/admin/incidents/:id/close?false_alarm=true
+exports.closeIncident = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const upstream = await axios.post(
+      `${AI_FUSION_URL}/incidents/${id}/close`,
+      null,
+      {
+        params: { false_alarm: req.query.false_alarm === 'true' },
+        headers: upstreamHeaders(),
+        timeout: PROXY_TIMEOUT_MS,
+      }
+    );
+    res.status(upstream.status).json(upstream.data);
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return res.status(404).json({ message: 'Olay bulunamadı' });
+    }
+    const status = err.response?.status ?? 502;
+    res.status(status >= 500 ? 502 : status).json({
+      message: 'Olay kapatılamadı',
       detail: err.response?.data ?? err.message,
     });
   }

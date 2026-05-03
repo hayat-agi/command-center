@@ -24,3 +24,17 @@ export const getIncidentMessages = async (incidentId) => {
     throw error.response?.data || { message: 'Mesajlar alınamadı' };
   }
 };
+
+// Admin: olayı kapat. falseAlarm=true → status FALSE_ALARM, aksi halde CLOSED.
+export const closeIncident = async (incidentId, falseAlarm = false) => {
+  try {
+    const response = await api.post(
+      `/admin/incidents/${incidentId}/close`,
+      null,
+      { params: { false_alarm: falseAlarm ? 'true' : 'false' } }
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || { message: 'Olay kapatılamadı' };
+  }
+};
