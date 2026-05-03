@@ -50,6 +50,7 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import RouterIcon from '@mui/icons-material/Router';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import MapComponent from '../components/MapComponent';
+import SourceBadge from '../components/SourceBadge';
 import { getIncidents, getIncidentMessages, closeIncident } from '../services/incidentService';
 import { getGateways } from '../api/gatewayService';
 import dayjs from 'dayjs';
@@ -421,6 +422,12 @@ const IncidentMessages = ({ incidentId, color }) => {
                   · {m.sourceUserName}
                 </Typography>
               )}
+              <SourceBadge
+                source={m.source}
+                hops={m.meshHops}
+                srcAddr={m.meshSrcAddr}
+                msgId={m.meshMsgId}
+              />
               <Box sx={{ flex: 1 }} />
               {m.type && m.type !== 'manual_message' && (
                 <Chip label={m.type.toUpperCase()} size="small" sx={{ height: 18, fontSize: '0.6rem' }} />
