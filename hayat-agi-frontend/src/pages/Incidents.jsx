@@ -73,21 +73,25 @@ const URGENCY_LABELS = {
 
 const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
-const GATEWAY_STATUS_COLOR = {
-  active: '#2e7d32',
-  inactive: '#9e9e9e',
-  low_battery: '#ef6c00',
-};
+// Realistic radio coverage per gateway. ESP32 BLE: ~100m practical;
+// ESP32 + LoRa long-range: 500m-5km depending on terrain. We use 500m as
+// the operational default — overrideable per-gateway later via a
+// `coverageRadiusM` field on the Gateway model.
+const DEFAULT_COVERAGE_M = 500;
 
-// Mesh proximity for connection lines (km). Real BLE/LoRa range is much
-// shorter; this is an operational-overview number that keeps the network
-// visualization legible at country zoom.
-const MESH_PROXIMITY_KM = 80;
+// Two gateways are "connected" if their coverage circles overlap, i.e.
+// their centers are within 2 × coverage of each other.
+const connectionRadiusM = (cov) => 2 * cov;
 
-// Haversine distance between two {lat, lng} points, in kilometers.
-const haversineKm = (a, b) => {
+const GATEWAY_INACTIVE_COLOR = '#9e9e9e';
+const GATEWAY_ISOLATED_COLOR = '#ef6c00';
+
+// Distinct cluster colors. First color is reserved for "connected".
+const CLUSTER_PALETTE = ['#1976d2', '#388e3c', '#7b1fa2', '#0097a7', '#c2185b', '#5d4037', '#455a64', '#f9a825'];
+
+const haversineM = (a, b) => {
   if (!a || !b || a.lat == null || b.lat == null) return Infinity;
-  const R = 6371;
+  const R = 6371000;
   const toRad = (d) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
@@ -97,9 +101,6 @@ const haversineKm = (a, b) => {
   return 2 * R * Math.asin(Math.sqrt(x));
 };
 
-// Match an incident's gateway_id (string) to a Gateway document. The string
-// could be a stringified Mongo ObjectId (real flow) or a device_id (demo
-// flow), so try both.
 const findGatewayForIncident = (incident, gateways) => {
   if (!incident || !gateways || gateways.length === 0) return null;
   const ids = incident.gateway_ids || [];
@@ -113,32 +114,66 @@ const findGatewayForIncident = (incident, gateways) => {
   return null;
 };
 
-// Build mesh-proximity lines: each gateway -> its 2 nearest neighbors (de-duped).
-const computeMeshLines = (gateways) => {
-  const valid = gateways.filter((g) => g.location?.lat != null && g.location?.lng != null);
-  const seen = new Set();
-  const lines = [];
+// BFS-based connected-component analysis. Two active gateways are in the
+// same component if a chain of pairwise overlaps connects them. Inactive
+// gateways are excluded entirely (they can't relay anything).
+const computeClusters = (gateways, coverageM = DEFAULT_COVERAGE_M) => {
+  const reach = connectionRadiusM(coverageM);
+  const valid = gateways.filter(
+    (g) => g.location?.lat != null && g.location?.lng != null && g.status !== 'inactive'
+  );
+  const visited = new Set();
+  const clusters = [];
   for (const g of valid) {
-    const neighbors = valid
-      .filter((o) => o._id !== g._id)
-      .map((o) => ({ o, d: haversineKm(g.location, o.location) }))
-      .filter((x) => x.d <= MESH_PROXIMITY_KM)
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 2);
-    for (const { o } of neighbors) {
-      const key = [g._id, o._id].sort().join('|');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      lines.push({
-        from: [g.location.lat, g.location.lng],
-        to: [o.location.lat, o.location.lng],
-        color: '#78909c',
-        weight: 1.2,
-        opacity: 0.45,
-        dashArray: '4 6',
-      });
+    if (visited.has(g._id)) continue;
+    const cluster = [];
+    const queue = [g];
+    while (queue.length) {
+      const cur = queue.shift();
+      if (visited.has(cur._id)) continue;
+      visited.add(cur._id);
+      cluster.push(cur);
+      for (const other of valid) {
+        if (visited.has(other._id)) continue;
+        if (haversineM(cur.location, other.location) <= reach) queue.push(other);
+      }
     }
+    clusters.push(cluster);
   }
+  return clusters;
+};
+
+// Color a gateway based on its cluster membership.
+const colorForCluster = (clusterIdx, clusterSize) => {
+  if (clusterSize <= 1) return GATEWAY_ISOLATED_COLOR; // singleton — needs a relay
+  return CLUSTER_PALETTE[clusterIdx % CLUSTER_PALETTE.length];
+};
+
+// All intra-cluster connection lines (overlapping coverage). De-duplicated.
+const computeMeshLines = (clusters, coverageM = DEFAULT_COVERAGE_M) => {
+  const reach = connectionRadiusM(coverageM);
+  const lines = [];
+  const seen = new Set();
+  clusters.forEach((cluster, idx) => {
+    if (cluster.length < 2) return;
+    const color = CLUSTER_PALETTE[idx % CLUSTER_PALETTE.length];
+    for (const a of cluster) {
+      for (const b of cluster) {
+        if (a._id === b._id) continue;
+        const key = [a._id, b._id].sort().join('|');
+        if (seen.has(key)) continue;
+        if (haversineM(a.location, b.location) > reach) continue;
+        seen.add(key);
+        lines.push({
+          from: [a.location.lat, a.location.lng],
+          to: [b.location.lat, b.location.lng],
+          color,
+          weight: 2,
+          opacity: 0.7,
+        });
+      }
+    }
+  });
   return lines;
 };
 
@@ -569,27 +604,66 @@ const Incidents = () => {
 
   const colorResolver = (item) => URGENCY_COLORS[item.urgency] || '#9e9e9e';
 
-  // Background gateway markers + mesh proximity lines
+  // Cluster the active gateways. Each gateway gets a color based on which
+  // connected component it belongs to (singletons get the isolated color).
+  const clusters = useMemo(() => computeClusters(gateways, DEFAULT_COVERAGE_M), [gateways]);
+
+  // Map of gateway._id -> {clusterIdx, color, isIsolated}
+  const gatewayMeta = useMemo(() => {
+    const m = new Map();
+    clusters.forEach((cluster, idx) => {
+      const color = colorForCluster(idx, cluster.length);
+      cluster.forEach((g) => m.set(g._id, { clusterIdx: idx, color, isIsolated: cluster.length <= 1 }));
+    });
+    return m;
+  }, [clusters]);
+
+  // Background gateway markers — colored by cluster membership.
   const extraMarkers = useMemo(
     () =>
       gateways
         .filter((g) => g.location?.lat != null && g.location?.lng != null)
-        .map((g) => ({
-          id: g._id,
-          lat: g.location.lat,
-          lng: g.location.lng,
-          color: GATEWAY_STATUS_COLOR[g.status] || GATEWAY_STATUS_COLOR.inactive,
-          radius: 5,
-          opacity: 0.9,
-          fillOpacity: 0.45,
-          label: g.name || g.serialNumber || 'Gateway',
-          subtitle: `Durum: ${g.status} · Pil: %${g.battery ?? '?'}`,
-          highlighted: sourceGateway && sourceGateway._id === g._id,
-        })),
-    [gateways, sourceGateway]
+        .map((g) => {
+          const meta = gatewayMeta.get(g._id);
+          const color = g.status === 'inactive' ? GATEWAY_INACTIVE_COLOR : meta?.color || GATEWAY_ISOLATED_COLOR;
+          return {
+            id: g._id,
+            lat: g.location.lat,
+            lng: g.location.lng,
+            color,
+            radius: 6,
+            opacity: 0.95,
+            fillOpacity: g.status === 'inactive' ? 0.25 : 0.7,
+            label: g.name || g.serialNumber || 'Gateway',
+            subtitle: meta?.isIsolated
+              ? `İZOLE — Pil: %${g.battery ?? '?'} · Sinyal: ${g.signal_quality}`
+              : `Durum: ${g.status} · Pil: %${g.battery ?? '?'} · Sinyal: ${g.signal_quality}`,
+            highlighted: sourceGateway && sourceGateway._id === g._id,
+          };
+        }),
+    [gateways, gatewayMeta, sourceGateway]
   );
 
-  const meshLines = useMemo(() => computeMeshLines(gateways), [gateways]);
+  // Coverage circles per gateway, color-matched to cluster.
+  const coverageCircles = useMemo(
+    () =>
+      gateways
+        .filter((g) => g.location?.lat != null && g.location?.lng != null && g.status !== 'inactive')
+        .map((g) => {
+          const meta = gatewayMeta.get(g._id);
+          return {
+            lat: g.location.lat,
+            lng: g.location.lng,
+            radiusMeters: DEFAULT_COVERAGE_M,
+            color: meta?.color || GATEWAY_ISOLATED_COLOR,
+            fillOpacity: meta?.isIsolated ? 0.12 : 0.08,
+            opacity: 0.55,
+          };
+        }),
+    [gateways, gatewayMeta]
+  );
+
+  const meshLines = useMemo(() => computeMeshLines(clusters, DEFAULT_COVERAGE_M), [clusters]);
 
   // Source-link: line from incident's source gateway to the incident centroid
   const sourceLink = useMemo(() => {
@@ -649,6 +723,30 @@ const Incidents = () => {
 
       <StatsHeader incidents={incidents} />
 
+      {/* Network coverage callout — visible only when there ARE clusters to talk about. */}
+      {clusters.length > 0 && (
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2, flexWrap: 'wrap' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Ağ
+          </Typography>
+          <Chip
+            size="small"
+            label={`${clusters.filter((c) => c.length >= 2).length} bağlı küme`}
+            sx={{ bgcolor: alpha(CLUSTER_PALETTE[0], 0.15), color: CLUSTER_PALETTE[0], fontWeight: 700 }}
+          />
+          {clusters.filter((c) => c.length === 1).length > 0 && (
+            <Chip
+              size="small"
+              label={`${clusters.filter((c) => c.length === 1).length} izole gateway`}
+              sx={{ bgcolor: alpha(GATEWAY_ISOLATED_COLOR, 0.15), color: GATEWAY_ISOLATED_COLOR, fontWeight: 700 }}
+            />
+          )}
+          <Typography variant="caption" color="text.secondary">
+            Kapsama: {DEFAULT_COVERAGE_M} m / gateway · İzole noktalar arada bir röle gateway'e ihtiyaç duyar.
+          </Typography>
+        </Stack>
+      )}
+
       {error && <MuiAlert severity="error" sx={{ mb: 2 }}>{error}</MuiAlert>}
 
       <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
@@ -664,6 +762,7 @@ const Incidents = () => {
               colorResolver={colorResolver}
               extraMarkers={extraMarkers}
               lines={allLines}
+              coverageCircles={coverageCircles}
             />
           </Paper>
         </Grid>
