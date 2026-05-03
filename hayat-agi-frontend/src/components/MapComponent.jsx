@@ -31,14 +31,17 @@ L.Icon.Default.mergeOptions({
 });
 
 // Özel ikonlar oluştur
-const createCustomIcon = (status, battery) => {
-    let color = '#4caf50'; // Yeşil - Aktif
-    if (status === 'inactive') {
-        color = '#9e9e9e'; // Gri - Pasif
-    } else if (status === 'low_battery' || battery < 20) {
-        color = '#f44336'; // Kırmızı - Düşük pil
-    } else if (battery < 50) {
-        color = '#ff9800'; // Turuncu - Orta pil
+// colorOverride: opt-in hex color from colorResolver prop; bypasses status/battery branch.
+const createCustomIcon = (status, battery, colorOverride) => {
+    let color = colorOverride || '#4caf50'; // Yeşil - Aktif
+    if (!colorOverride) {
+        if (status === 'inactive') {
+            color = '#9e9e9e'; // Gri - Pasif
+        } else if (status === 'low_battery' || battery < 20) {
+            color = '#f44336'; // Kırmızı - Düşük pil
+        } else if (battery < 50) {
+            color = '#ff9800'; // Turuncu - Orta pil
+        }
     }
 
     return new Icon({
@@ -68,7 +71,9 @@ const MapUpdater = ({ center, zoom }) => {
     return null;
 };
 
-const MapComponent = ({ gateways = [], selectedGateway, onGatewayClick, onMarkerClick, loading, error, isRefreshing = false }) => {
+// colorResolver: optional (item) => '#hex' for callers that don't fit the
+// gateway status/battery model (e.g. Incidents page colors by urgency).
+const MapComponent = ({ gateways = [], selectedGateway, onGatewayClick, onMarkerClick, loading, error, isRefreshing = false, colorResolver }) => {
     // İstanbul merkez koordinatları
     const defaultCenter = [41.0082, 28.9784];
     const defaultZoom = 13;
@@ -326,10 +331,11 @@ const MapComponent = ({ gateways = [], selectedGateway, onGatewayClick, onMarker
                         {/* Gateway marker'ları */}
                         {validGateways.map((gateway) => {
                             const isSelected = selectedGateway?._id === gateway._id;
-                            const icon = createCustomIcon(gateway.status, gateway.battery || 0);
+                            const colorOverride = colorResolver ? colorResolver(gateway) : undefined;
+                            const icon = createCustomIcon(gateway.status, gateway.battery || 0, colorOverride);
 
-                            // Key'e status ve battery ekle ki değişikliklerde icon güncellensin
-                            const markerKey = `${gateway._id}-${gateway.status}-${gateway.battery}`;
+                            // Key'e status, battery ve override color ekle ki değişikliklerde icon güncellensin
+                            const markerKey = `${gateway._id}-${gateway.status}-${gateway.battery}-${colorOverride || ''}`;
 
                             return (
                                 <Marker
