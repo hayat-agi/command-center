@@ -31,6 +31,20 @@ app.use(cors({
 
 app.use(express.json());
 
+// Lightweight request logger — every HTTP request logs method + URL + status + timing.
+// No dep on morgan; flips off via DISABLE_REQ_LOG=1.
+if (process.env.DISABLE_REQ_LOG !== '1') {
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const dur = Date.now() - start;
+      const ip = req.ip || req.socket.remoteAddress || '?';
+      console.log(`[req] ${req.method} ${req.originalUrl} ${res.statusCode} ${dur}ms ip=${ip}`);
+    });
+    next();
+  });
+}
+
 // Routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
