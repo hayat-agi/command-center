@@ -80,10 +80,13 @@ const MapUpdater = ({ center, zoom }) => {
 // lines: optional Polylines drawn over the map. Shape per item:
 //     { from: [lat,lng], to: [lat,lng], color, weight? (default 2),
 //       dashArray? (e.g. '4 6'), opacity? (default 0.7) }
+// coverageCircles: optional radio-coverage Circles (radius in meters).
+//   Drawn under everything else so markers/lines stay readable. Shape:
+//     { lat, lng, radiusMeters, color, fillOpacity? (default 0.08), opacity? (default 0.5) }
 const MapComponent = ({
     gateways = [], selectedGateway, onGatewayClick, onMarkerClick,
     loading, error, isRefreshing = false, colorResolver,
-    extraMarkers = [], lines = [],
+    extraMarkers = [], lines = [], coverageCircles = [],
 }) => {
     // İstanbul merkez koordinatları
     const defaultCenter = [41.0082, 28.9784];
@@ -338,6 +341,25 @@ const MapComponent = ({
                                 zoom={15}
                             />
                         )}
+
+                        {/* Radio coverage circles — bottom-most layer */}
+                        {coverageCircles.map((c, idx) => {
+                            if (c.lat == null || c.lng == null) return null;
+                            return (
+                                <Circle
+                                    key={`coverage-${idx}`}
+                                    center={[c.lat, c.lng]}
+                                    radius={c.radiusMeters}
+                                    pathOptions={{
+                                        color: c.color || '#90a4ae',
+                                        weight: 1,
+                                        opacity: c.opacity ?? 0.5,
+                                        fillColor: c.color || '#90a4ae',
+                                        fillOpacity: c.fillOpacity ?? 0.08,
+                                    }}
+                                />
+                            );
+                        })}
 
                         {/* Mesh / proximity / source-link lines (drawn UNDER markers) */}
                         {lines.map((line, idx) => {
