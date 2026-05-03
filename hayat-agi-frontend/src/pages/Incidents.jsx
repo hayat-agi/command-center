@@ -45,8 +45,10 @@ import PersonSearchIcon from '@mui/icons-material/PersonSearch';
 import HomeIcon from '@mui/icons-material/Home';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import RouterIcon from '@mui/icons-material/Router';
 import MapComponent from '../components/MapComponent';
-import { getIncidents } from '../services/incidentService';
+import { getIncidents, getIncidentMessages } from '../services/incidentService';
 import { getGateways } from '../api/gatewayService';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -389,6 +391,82 @@ const ScoreBreakdown = ({ breakdown }) => {
   );
 };
 
+const IncidentMessages = ({ incidentId, color }) => {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!incidentId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getIncidentMessages(incidentId)
+      .then((data) => {
+        if (!cancelled) setMessages(data.messages || []);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.message || 'Mesajlar alınamadı');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [incidentId]);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+        <CircularProgress size={20} />
+      </Box>
+    );
+  }
+  if (error) {
+    return <Typography variant="caption" color="error">{error}</Typography>;
+  }
+  if (messages.length === 0) {
+    return <Typography variant="caption" color="text.secondary">Mesaj bulunamadı.</Typography>;
+  }
+
+  return (
+    <Stack spacing={1}>
+      {messages.map((m) => (
+        <Card
+          key={m.id}
+          variant="outlined"
+          sx={{ borderLeft: `3px solid ${color}`, bgcolor: alpha(color, 0.03) }}
+        >
+          <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.75, lineHeight: 1.4 }}>
+              "{m.text || '(boş mesaj)'}"
+            </Typography>
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+              <Stack direction="row" alignItems="center" spacing={0.5}>
+                <RouterIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+                <Typography variant="caption" color="text.secondary">
+                  {m.gatewayName}
+                </Typography>
+              </Stack>
+              {m.sourceUserName && (
+                <Typography variant="caption" color="text.secondary">
+                  · {m.sourceUserName}
+                </Typography>
+              )}
+              <Box sx={{ flex: 1 }} />
+              {m.type && m.type !== 'manual_message' && (
+                <Chip label={m.type.toUpperCase()} size="small" sx={{ height: 18, fontSize: '0.6rem' }} />
+              )}
+              <Typography variant="caption" color="text.secondary">
+                {fromNowSafe(m.receivedAt)}
+              </Typography>
+            </Stack>
+          </CardContent>
+        </Card>
+      ))}
+    </Stack>
+  );
+};
+
 const IncidentDetail = ({ incident, onBack, sourceGateway }) => {
   const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
   const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
@@ -443,6 +521,16 @@ const IncidentDetail = ({ incident, onBack, sourceGateway }) => {
           )}
         </Stack>
 
+        <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.75 }}>
+          <ChatBubbleOutlineIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+          <Typography variant="caption" color="text.secondary">
+            ORİJİNAL MESAJLAR ({incident.n_messages})
+          </Typography>
+        </Stack>
+        <Box sx={{ mb: 2 }}>
+          <IncidentMessages incidentId={incident.id} color={color} />
+        </Box>
+
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
           MESAJ DAĞILIMI ({incident.n_messages} toplam)
         </Typography>
@@ -491,7 +579,9 @@ const IncidentDetail = ({ incident, onBack, sourceGateway }) => {
                   <Box
                     sx={{
                       width: 10, height: 10, borderRadius: '50%',
-                      bgcolor: GATEWAY_STATUS_COLOR[sourceGateway.status] || '#9e9e9e',
+                      bgcolor: sourceGateway.status === 'inactive'
+                        ? GATEWAY_INACTIVE_COLOR
+                        : sourceGateway.status === 'low_battery' ? '#ef6c00' : '#2e7d32',
                     }}
                   />
                   <Typography variant="body2" fontWeight={600}>
