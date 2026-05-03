@@ -322,9 +322,11 @@ exports.addDisasterEvent = async (req, res) => {
     }
 
     // Mobile sends BLE MAC or serialNumber as :id (not the Mongo ObjectId).
-    // Try ObjectId first, fall back to serialNumber lookup.
+    // Try ObjectId first, fall back to serialNumber lookup. Mesh-uplink
+    // requests have req.user === null (no JWT) — drop the owner constraint,
+    // gateway identity is established by the :id param alone.
     const mongoose = require('mongoose');
-    const lookup = { owner: req.user._id };
+    const lookup = req.user ? { owner: req.user._id } : {};
     if (mongoose.isValidObjectId(id)) {
       lookup.$or = [{ _id: id }, { serialNumber: id }];
     } else {
@@ -360,7 +362,7 @@ exports.addDisasterEvent = async (req, res) => {
       // First-class fields the fusion classifier reads directly.
       text: trimmedMessage || null,
       lang: lang || 'tr',
-      source_user: req.user._id,
+      source_user: req.user ? req.user._id : null,
 
       source,
       meshHops:    Number.isFinite(meshHops) ? meshHops : null,

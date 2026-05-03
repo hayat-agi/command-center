@@ -39,6 +39,23 @@ const protect = async (req, res, next) => {
   }
 };
 
+// Mesh-uplink bypass: gateway firmware (Node B) doesn't carry a JWT.
+// When the request advertises X-Source: mesh-uplink we skip auth and let
+// the controller handle the unauthenticated case (req.user === null).
+//
+// SECURITY: this is currently shared-network-trust only. Anyone reachable
+// at the backend can claim mesh-uplink. Add a shared-secret check
+// (X-Mesh-Token vs FUSION-style env var) before exposing this beyond LAN.
+// Mount this middleware ONLY on routes that explicitly support uplink —
+// never as a global app-level guard.
+const protectOrMeshUplink = async (req, res, next) => {
+  if ((req.headers['x-source'] || '').toLowerCase() === 'mesh-uplink') {
+    req.user = null;
+    return next();
+  }
+  return protect(req, res, next);
+};
+
 // Admin kontrolü
 const adminOnly = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
@@ -48,4 +65,4 @@ const adminOnly = (req, res, next) => {
   }
 };
 
-module.exports = { protect, adminOnly };
+module.exports = { protect, adminOnly, protectOrMeshUplink };
