@@ -23,6 +23,13 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Avatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
@@ -47,8 +54,9 @@ import InventoryIcon from '@mui/icons-material/Inventory';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import RouterIcon from '@mui/icons-material/Router';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import MapComponent from '../components/MapComponent';
-import { getIncidents, getIncidentMessages } from '../services/incidentService';
+import { getIncidents, getIncidentMessages, closeIncident } from '../services/incidentService';
 import { getGateways } from '../api/gatewayService';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
