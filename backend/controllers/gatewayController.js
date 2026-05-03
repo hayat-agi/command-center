@@ -337,6 +337,20 @@ exports.addDisasterEvent = async (req, res) => {
 
     const trimmedMessage = typeof message === 'string' ? message.trim() : null;
 
+    // Delivery-path headers set by the gateway uplink firmware. Phone-direct
+    // POSTs don't set these → source falls back to 'direct'. Anything else
+    // (legacy demo data, third-party) is 'unknown'.
+    const sourceHeader = (req.get('X-Source') || '').toLowerCase();
+    let source = 'direct';
+    if (sourceHeader === 'mesh-uplink' || sourceHeader === 'mesh') source = 'mesh';
+    else if (sourceHeader === 'direct') source = 'direct';
+    else if (sourceHeader) source = 'unknown';
+
+    const meshHopsHeader = req.get('X-Mesh-Hops');
+    const meshHops = meshHopsHeader != null && meshHopsHeader !== ''
+      ? parseInt(meshHopsHeader, 10)
+      : null;
+
     const alert = await Alert.create({
       device_id: gateway.serialNumber,
       gateway: gateway._id,
@@ -349,6 +363,11 @@ exports.addDisasterEvent = async (req, res) => {
       text: trimmedMessage || null,
       lang: lang || 'tr',
       source_user: req.user._id,
+
+      source,
+      mesh_hops: Number.isFinite(meshHops) ? meshHops : null,
+      mesh_src_addr: req.get('X-Mesh-Src') || null,
+      mesh_msg_id: req.get('X-Mesh-MsgId') || null,
 
       // Legacy payload kept so existing readers don't break; will be
       // dropped once all consumers move to top-level fields.
