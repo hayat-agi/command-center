@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -17,16 +17,44 @@ import {
   Divider,
   alpha,
   CircularProgress,
+  LinearProgress,
   Alert as MuiAlert,
+  Button,
+  ToggleButton,
+  ToggleButtonGroup,
+  Avatar,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import GroupIcon from '@mui/icons-material/Group';
+import ChildCareIcon from '@mui/icons-material/ChildCare';
+import ElderlyIcon from '@mui/icons-material/Elderly';
+import PregnantWomanIcon from '@mui/icons-material/PregnantWoman';
+import VerifiedIcon from '@mui/icons-material/Verified';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import ScienceIcon from '@mui/icons-material/Science';
+import BoltIcon from '@mui/icons-material/Bolt';
+import WaterDropIcon from '@mui/icons-material/WaterDrop';
+import LocalPoliceIcon from '@mui/icons-material/LocalPolice';
+import PersonSearchIcon from '@mui/icons-material/PersonSearch';
+import HomeIcon from '@mui/icons-material/Home';
+import InventoryIcon from '@mui/icons-material/Inventory';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MapComponent from '../components/MapComponent';
 import { getIncidents } from '../services/incidentService';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import 'dayjs/locale/tr';
+
+dayjs.extend(relativeTime);
+dayjs.locale('tr');
+
+// ---- Constants -------------------------------------------------------------
 
 const URGENCY_COLORS = {
   CRITICAL: '#d32f2f',
@@ -42,33 +70,359 @@ const URGENCY_LABELS = {
   LOW: 'Düşük',
 };
 
-// AI fusion service'in Incident şemasını MapComponent'in beklediği gateway-benzeri
-// objeye çeviriyoruz. Marker rengi colorResolver üzerinden urgency'ye göre belirlenir.
+const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+
+const CATEGORY_LABELS = {
+  MEDICAL_RESCUE: 'Tıbbi Kurtarma',
+  FIRE: 'Yangın',
+  HAZMAT: 'Tehlikeli Madde',
+  ELECTRICAL: 'Elektrik Arızası',
+  WATER: 'Su Arızası',
+  SECURITY: 'Güvenlik',
+  MISSING_PERSON: 'Kayıp Kişi',
+  CHILD_UNACCOMPANIED: 'Yalnız Çocuk',
+  RESOURCE_REQUEST: 'Yardım Talebi',
+  SHELTER: 'Barınma',
+  GENERAL: 'Genel',
+};
+
+const CATEGORY_ICONS = {
+  MEDICAL_RESCUE: LocalHospitalIcon,
+  FIRE: LocalFireDepartmentIcon,
+  HAZMAT: ScienceIcon,
+  ELECTRICAL: BoltIcon,
+  WATER: WaterDropIcon,
+  SECURITY: LocalPoliceIcon,
+  MISSING_PERSON: PersonSearchIcon,
+  CHILD_UNACCOMPANIED: ChildCareIcon,
+  RESOURCE_REQUEST: InventoryIcon,
+  SHELTER: HomeIcon,
+  GENERAL: InfoOutlinedIcon,
+};
+
+const CONFIRMATION = {
+  CONFIRMED: { label: 'Onaylandı', color: 'success', icon: VerifiedIcon, hint: 'En az bir self-report ve bir witness-report eşleşti.' },
+  LIKELY: { label: 'Olası', color: 'info', icon: HelpOutlineIcon, hint: 'Birden fazla witness-report var ama doğrudan etkilenen yok.' },
+  UNCONFIRMED: { label: 'Onaylanmadı', color: 'warning', icon: HelpOutlineIcon, hint: 'Tek mesaj — kuvvetlenmesi bekleniyor.' },
+  UNVERIFIED: { label: 'Doğrulanmadı', color: 'default', icon: HelpOutlineIcon, hint: 'Sadece bilgi mesajı; tehlike kanıtı yok.' },
+};
+
+// ---- Helpers ---------------------------------------------------------------
+
 const incidentToGatewayShape = (incident) => ({
   _id: incident.id,
   name: incident.auto_summary || `Olay ${incident.id?.slice(0, 6) ?? ''}`,
   status: incident.status?.toLowerCase() === 'open' ? 'active' : 'inactive',
-  battery: 100, // unused — colorResolver overrides
+  battery: 100,
   location: incident.centroid,
   urgency: incident.max_urgency,
   __raw: incident,
 });
 
+const sortByScore = (a, b) => (b.score ?? 0) - (a.score ?? 0);
+const sortByTime = (a, b) => new Date(b.last_event_at || b.created_at || 0) - new Date(a.last_event_at || a.created_at || 0);
+
+const fromNowSafe = (ts) => (ts ? dayjs(ts).fromNow() : '—');
+
+// ---- Subcomponents ---------------------------------------------------------
+
+const StatsHeader = ({ incidents }) => {
+  const counts = useMemo(() => {
+    const c = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    incidents.forEach((i) => {
+      if (i.max_urgency in c) c[i.max_urgency] += 1;
+    });
+    return c;
+  }, [incidents]);
+
+  return (
+    <Stack direction="row" spacing={1.5} sx={{ mb: 2, flexWrap: 'wrap' }}>
+      {['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((u) => (
+        <Card
+          key={u}
+          variant="outlined"
+          sx={{
+            flex: '1 1 140px',
+            borderTop: `3px solid ${URGENCY_COLORS[u]}`,
+            transition: 'transform 0.15s',
+            '&:hover': { transform: 'translateY(-2px)' },
+          }}
+        >
+          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Stack direction="row" alignItems="baseline" spacing={1}>
+              <Typography variant="h4" fontWeight={800} sx={{ color: URGENCY_COLORS[u] }}>
+                {counts[u]}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {URGENCY_LABELS[u]}
+              </Typography>
+            </Stack>
+          </CardContent>
+        </Card>
+      ))}
+    </Stack>
+  );
+};
+
+const VulnerableSignals = ({ incident, size = 'small' }) => {
+  const items = [];
+  if (incident.has_child_signal) items.push({ icon: ChildCareIcon, label: 'Çocuk', color: '#e91e63' });
+  if (incident.has_elderly_signal) items.push({ icon: ElderlyIcon, label: 'Yaşlı', color: '#7b1fa2' });
+  if (incident.has_pregnant_signal) items.push({ icon: PregnantWomanIcon, label: 'Hamile', color: '#c2185b' });
+  if (items.length === 0) return null;
+  return (
+    <Stack direction="row" spacing={0.5}>
+      {items.map(({ icon: Icon, label, color }) => (
+        <Tooltip key={label} title={label}>
+          <Avatar sx={{ width: size === 'small' ? 22 : 32, height: size === 'small' ? 22 : 32, bgcolor: alpha(color, 0.15), color }}>
+            <Icon sx={{ fontSize: size === 'small' ? 14 : 18 }} />
+          </Avatar>
+        </Tooltip>
+      ))}
+    </Stack>
+  );
+};
+
+const CategoryChip = ({ code, size = 'small' }) => {
+  const Icon = CATEGORY_ICONS[code] || InfoOutlinedIcon;
+  return (
+    <Chip
+      icon={<Icon sx={{ fontSize: 14 }} />}
+      label={CATEGORY_LABELS[code] || code}
+      size={size}
+      variant="outlined"
+      sx={{ height: size === 'small' ? 22 : 28 }}
+    />
+  );
+};
+
+const IncidentCard = ({ incident, isSelected, onClick }) => {
+  const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
+  const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
+  return (
+    <Card
+      onClick={onClick}
+      sx={{
+        cursor: 'pointer',
+        borderLeft: `4px solid ${color}`,
+        boxShadow: isSelected ? `0 0 0 2px ${color}` : undefined,
+        transition: 'box-shadow 0.15s',
+        '&:hover': { boxShadow: `0 0 0 2px ${alpha(color, 0.5)}` },
+      }}
+    >
+      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
+          <Chip
+            label={URGENCY_LABELS[incident.max_urgency] || incident.max_urgency}
+            size="small"
+            sx={{ bgcolor: color, color: 'white', fontWeight: 700, height: 22 }}
+          />
+          <Chip label={conf.label} size="small" color={conf.color} variant="outlined" sx={{ height: 22 }} />
+          <VulnerableSignals incident={incident} />
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="caption" color="text.secondary">
+            {fromNowSafe(incident.last_event_at || incident.created_at)}
+          </Typography>
+        </Stack>
+        <Typography variant="body2" sx={{ mb: 0.75, fontWeight: 500 }}>
+          {incident.auto_summary || `Olay ${incident.id?.slice(0, 8)}`}
+        </Typography>
+        <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mb: 0.75 }}>
+          {(incident.categories || []).slice(0, 3).map((c) => (
+            <CategoryChip key={c} code={c} />
+          ))}
+        </Stack>
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <GroupIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+            <Typography variant="caption" color="text.secondary">
+              {incident.n_messages ?? 0}
+            </Typography>
+          </Stack>
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="caption" sx={{ fontWeight: 700 }} color={color}>
+            {incident.score?.toFixed(2) ?? '—'}
+          </Typography>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+};
+
+const ScoreBreakdown = ({ breakdown }) => {
+  if (!breakdown) return null;
+  const rows = [
+    { key: 'base', label: 'Aciliyet × Onay' },
+    { key: 'message_count_bonus', label: 'Mesaj sayısı bonusu' },
+    { key: 'vulnerable_group_bonus', label: 'Risk grubu bonusu' },
+    { key: 'hazard_bonus', label: 'Tehlike bonusu' },
+  ];
+  const max = Math.max(...rows.map((r) => breakdown[r.key] || 0), 1);
+  return (
+    <Stack spacing={0.75}>
+      {rows.map((r) => {
+        const val = breakdown[r.key] || 0;
+        return (
+          <Box key={r.key}>
+            <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.25 }}>
+              <Typography variant="caption" color="text.secondary">
+                {r.label}
+              </Typography>
+              <Typography variant="caption" fontWeight={600}>
+                {val.toFixed(2)}
+              </Typography>
+            </Stack>
+            <LinearProgress
+              variant="determinate"
+              value={(val / max) * 100}
+              sx={{ height: 4, borderRadius: 2, opacity: val > 0 ? 1 : 0.3 }}
+            />
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+};
+
+const IncidentDetail = ({ incident, onBack }) => {
+  const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
+  const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
+  const ConfIcon = conf.icon;
+
+  return (
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      <Box sx={{ bgcolor: color, color: 'white', px: 2, py: 1.5 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <IconButton size="small" onClick={onBack} sx={{ color: 'white' }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="overline" sx={{ letterSpacing: 1, fontWeight: 700 }}>
+            {URGENCY_LABELS[incident.max_urgency]}
+          </Typography>
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="h5" fontWeight={800}>
+            {incident.score?.toFixed(2) ?? '—'}
+          </Typography>
+        </Stack>
+      </Box>
+      <CardContent sx={{ flex: 1 }}>
+        <Typography variant="body1" fontWeight={500} sx={{ mb: 2 }}>
+          {incident.auto_summary || `Olay ${incident.id?.slice(0, 8)}`}
+        </Typography>
+
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+          <Chip
+            icon={<ConfIcon sx={{ fontSize: 14 }} />}
+            label={conf.label}
+            color={conf.color}
+            size="small"
+          />
+          <Tooltip title={conf.hint}>
+            <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+          </Tooltip>
+          <Box sx={{ flex: 1 }} />
+          <VulnerableSignals incident={incident} size="medium" />
+        </Stack>
+
+        <Divider sx={{ mb: 2 }} />
+
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+          KATEGORİLER
+        </Typography>
+        <Stack direction="row" spacing={0.75} flexWrap="wrap" sx={{ mb: 2 }}>
+          {(incident.categories || []).map((c) => (
+            <CategoryChip key={c} code={c} size="medium" />
+          ))}
+          {(incident.categories || []).length === 0 && (
+            <Typography variant="caption" color="text.secondary">Kategori atanmadı</Typography>
+          )}
+        </Stack>
+
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+          MESAJ DAĞILIMI ({incident.n_messages} toplam)
+        </Typography>
+        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <Chip label={`${incident.n_self_reports} self`} size="small" variant="outlined" />
+          <Chip label={`${incident.n_witness_reports} tanık`} size="small" variant="outlined" />
+          <Chip label={`${incident.n_info} bilgi`} size="small" variant="outlined" />
+        </Stack>
+
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+          SKOR DETAYI
+        </Typography>
+        <Box sx={{ mb: 2 }}>
+          <ScoreBreakdown breakdown={incident.score_breakdown} />
+        </Box>
+
+        {incident.dispatched_teams && incident.dispatched_teams.length > 0 && (
+          <>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+              SEVK EDİLEN EKİPLER
+            </Typography>
+            <Stack spacing={0.75} sx={{ mb: 2 }}>
+              {incident.dispatched_teams.map((t, idx) => (
+                <Stack key={`${t.team_code}-${idx}`} direction="row" alignItems="center" spacing={1}>
+                  <Chip label={`P${t.priority ?? idx + 1}`} size="small" color="primary" sx={{ minWidth: 36, height: 22 }} />
+                  <Typography variant="body2" fontWeight={500}>{t.team_code}</Typography>
+                  {t.reason && (
+                    <Typography variant="caption" color="text.secondary">— {t.reason}</Typography>
+                  )}
+                </Stack>
+              ))}
+            </Stack>
+          </>
+        )}
+
+        <Divider sx={{ mb: 2 }} />
+
+        <Stack spacing={0.5}>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">Oluşturulma</Typography>
+            <Typography variant="caption">{fromNowSafe(incident.created_at)}</Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">Son mesaj</Typography>
+            <Typography variant="caption">{fromNowSafe(incident.last_event_at)}</Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">Gateway</Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+              {(incident.gateway_ids || []).join(', ') || '—'}
+            </Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">Konum</Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+              {incident.centroid?.lat?.toFixed(4) ?? '—'}, {incident.centroid?.lng?.toFixed(4) ?? '—'}
+            </Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">Olay ID</Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{incident.id}</Typography>
+          </Stack>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ---- Page ------------------------------------------------------------------
+
 const Incidents = () => {
   const [incidents, setIncidents] = useState([]);
-  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [statusFilter, setStatusFilter] = useState('open');
+  const [sortBy, setSortBy] = useState('score');
 
   const loadIncidents = useCallback(async (isInitial = false) => {
     try {
       if (isInitial) setLoading(true);
       else setIsRefreshing(true);
       setError(null);
-
       const filter = statusFilter === 'all' ? undefined : statusFilter;
       const data = await getIncidents(filter);
       setIncidents(data.incidents || []);
@@ -82,55 +436,53 @@ const Incidents = () => {
     }
   }, [statusFilter]);
 
-  useEffect(() => {
-    loadIncidents(true);
-  }, [loadIncidents]);
-
+  useEffect(() => { loadIncidents(true); }, [loadIncidents]);
   useEffect(() => {
     const interval = setInterval(() => loadIncidents(false), 5000);
     return () => clearInterval(interval);
   }, [loadIncidents]);
 
-  const mapItems = incidents
+  const sortedIncidents = useMemo(() => {
+    const sorted = [...incidents];
+    sorted.sort(sortBy === 'score' ? sortByScore : sortByTime);
+    return sorted;
+  }, [incidents, sortBy]);
+
+  const selectedIncident = selectedId ? incidents.find((i) => i.id === selectedId) : null;
+
+  const mapItems = sortedIncidents
     .filter((i) => i.centroid?.lat != null && i.centroid?.lng != null)
     .map(incidentToGatewayShape);
 
   const colorResolver = (item) => URGENCY_COLORS[item.urgency] || '#9e9e9e';
-
-  const handleSelect = (item) => {
-    const raw = incidents.find((i) => i.id === item._id);
-    setSelectedIncident(raw || null);
-  };
 
   return (
     <Box sx={{ p: 3, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
           <ReportProblemIcon color="error" />
-          <Typography variant="h5" fontWeight={700}>
-            Olaylar
-          </Typography>
-          <Chip label={`${incidents.length} aktif`} color="error" size="small" />
+          <Typography variant="h5" fontWeight={700}>Olaylar</Typography>
+          <Chip label={`${incidents.length}`} size="small" color="error" />
         </Stack>
         <Stack direction="row" alignItems="center" spacing={1}>
-          <FormControl size="small" sx={{ minWidth: 140 }}>
+          <FormControl size="small" sx={{ minWidth: 110 }}>
             <InputLabel>Durum</InputLabel>
-            <Select
-              value={statusFilter}
-              label="Durum"
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
+            <Select value={statusFilter} label="Durum" onChange={(e) => setStatusFilter(e.target.value)}>
               <MenuItem value="open">Açık</MenuItem>
               <MenuItem value="closed">Kapalı</MenuItem>
               <MenuItem value="all">Hepsi</MenuItem>
             </Select>
           </FormControl>
+          <ToggleButtonGroup size="small" exclusive value={sortBy} onChange={(_, v) => v && setSortBy(v)}>
+            <ToggleButton value="score">Skor</ToggleButton>
+            <ToggleButton value="time">Zaman</ToggleButton>
+          </ToggleButtonGroup>
           {lastUpdate && (
             <Tooltip title={`Son güncelleme: ${dayjs(lastUpdate).format('HH:mm:ss')}`}>
               <Stack direction="row" alignItems="center" spacing={0.5}>
                 <AccessTimeIcon fontSize="small" color="action" />
                 <Typography variant="caption" color="text.secondary">
-                  {dayjs(lastUpdate).format('HH:mm:ss')}
+                  {fromNowSafe(lastUpdate)}
                 </Typography>
               </Stack>
             </Tooltip>
@@ -143,11 +495,9 @@ const Incidents = () => {
         </Stack>
       </Stack>
 
-      {error && (
-        <MuiAlert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </MuiAlert>
-      )}
+      <StatsHeader incidents={incidents} />
+
+      {error && <MuiAlert severity="error" sx={{ mb: 2 }}>{error}</MuiAlert>}
 
       <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
         <Grid item xs={12} md={8} sx={{ minHeight: 500 }}>
@@ -155,7 +505,7 @@ const Incidents = () => {
             <MapComponent
               gateways={mapItems}
               selectedGateway={selectedIncident ? incidentToGatewayShape(selectedIncident) : null}
-              onMarkerClick={handleSelect}
+              onMarkerClick={(item) => setSelectedId(item._id)}
               loading={loading}
               error={null}
               isRefreshing={isRefreshing}
@@ -164,88 +514,37 @@ const Incidents = () => {
           </Paper>
         </Grid>
 
-        <Grid item xs={12} md={4} sx={{ minHeight: 500, overflowY: 'auto' }}>
-          <Stack spacing={1.5}>
-            {loading && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <CircularProgress />
-              </Box>
-            )}
-            {!loading && incidents.length === 0 && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="body2" color="text.secondary" align="center">
-                    Aktif olay yok.
-                  </Typography>
-                </CardContent>
-              </Card>
-            )}
-            {incidents.map((incident) => {
-              const isSel = selectedIncident?.id === incident.id;
-              const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
-              return (
-                <Card
-                  key={incident.id}
-                  onClick={() => setSelectedIncident(incident)}
-                  sx={{
-                    cursor: 'pointer',
-                    border: `2px solid ${isSel ? color : 'transparent'}`,
-                    transition: 'border-color 0.2s',
-                    '&:hover': { borderColor: alpha(color, 0.5) },
-                  }}
-                >
-                  <CardContent sx={{ '&:last-child': { pb: 2 } }}>
-                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                      <Chip
-                        label={URGENCY_LABELS[incident.max_urgency] || incident.max_urgency}
-                        size="small"
-                        sx={{ bgcolor: color, color: 'white', fontWeight: 700 }}
-                      />
-                      <Chip
-                        label={incident.confirmation || 'unconfirmed'}
-                        size="small"
-                        variant="outlined"
-                      />
-                      <Box sx={{ flex: 1 }} />
-                      <Typography variant="caption" color="text.secondary">
-                        {dayjs(incident.last_event_at || incident.created_at).format('HH:mm')}
-                      </Typography>
-                    </Stack>
-                    <Typography variant="body2" sx={{ mb: 1 }}>
-                      {incident.auto_summary || `Olay ${incident.id?.slice(0, 8)}`}
+        <Grid item xs={12} md={4} sx={{ minHeight: 500, height: '100%', overflow: 'hidden' }}>
+          {selectedIncident ? (
+            <Box sx={{ height: '100%', overflow: 'auto' }}>
+              <IncidentDetail incident={selectedIncident} onBack={() => setSelectedId(null)} />
+            </Box>
+          ) : (
+            <Stack spacing={1.5} sx={{ height: '100%', overflowY: 'auto', pr: 1 }}>
+              {loading && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                  <CircularProgress />
+                </Box>
+              )}
+              {!loading && sortedIncidents.length === 0 && (
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary" align="center">
+                      Bu filtre için olay yok.
                     </Typography>
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mb: 1 }}>
-                      {(incident.categories || []).map((cat) => (
-                        <Chip key={cat} label={cat} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
-                      ))}
-                    </Stack>
-                    <Divider sx={{ my: 1 }} />
-                    <Stack direction="row" spacing={2}>
-                      <Stack direction="row" alignItems="center" spacing={0.5}>
-                        <GroupIcon fontSize="small" color="action" />
-                        <Typography variant="caption" color="text.secondary">
-                          {incident.n_messages ?? 0} mesaj
-                        </Typography>
-                      </Stack>
-                      {incident.centroid && (
-                        <Stack direction="row" alignItems="center" spacing={0.5}>
-                          <LocationOnIcon fontSize="small" color="action" />
-                          <Typography variant="caption" color="text.secondary">
-                            {incident.centroid.lat?.toFixed(3)}, {incident.centroid.lng?.toFixed(3)}
-                          </Typography>
-                        </Stack>
-                      )}
-                      {incident.score != null && (
-                        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                          Skor: <strong>{incident.score.toFixed(2)}</strong>
-                        </Typography>
-                      )}
-                    </Stack>
                   </CardContent>
                 </Card>
-              );
-            })}
-          </Stack>
+              )}
+              {sortedIncidents.map((incident) => (
+                <IncidentCard
+                  key={incident.id}
+                  incident={incident}
+                  isSelected={selectedId === incident.id}
+                  onClick={() => setSelectedId(incident.id)}
+                />
+              ))}
+            </Stack>
+          )}
         </Grid>
       </Grid>
     </Box>
