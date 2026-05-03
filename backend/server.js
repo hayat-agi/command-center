@@ -12,6 +12,10 @@ const path = require('path');
 // .env dosyasının yolunu garantiye alıyoruz
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+// Fail-fast on missing or weak security-critical env vars.
+const { validateEnv } = require('./config/validateEnv');
+validateEnv();
+
 const app = express();
 
 // MongoDB bağlantısını başlat
