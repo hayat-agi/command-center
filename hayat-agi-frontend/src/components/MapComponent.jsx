@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, CircleMarker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './MapComponent.css';
@@ -72,8 +72,19 @@ const MapUpdater = ({ center, zoom }) => {
 };
 
 // colorResolver: optional (item) => '#hex' for callers that don't fit the
-// gateway status/battery model (e.g. Incidents page colors by urgency).
-const MapComponent = ({ gateways = [], selectedGateway, onGatewayClick, onMarkerClick, loading, error, isRefreshing = false, colorResolver }) => {
+//   gateway status/battery model (e.g. Incidents page colors by urgency).
+// extraMarkers: optional secondary layer rendered as small CircleMarkers
+//   (e.g. background gateways under incident pins). Shape per item:
+//     { id, lat, lng, color, label?, radius? (default 6), opacity? (default 0.85),
+//       highlighted? — when true draws a halo ring }
+// lines: optional Polylines drawn over the map. Shape per item:
+//     { from: [lat,lng], to: [lat,lng], color, weight? (default 2),
+//       dashArray? (e.g. '4 6'), opacity? (default 0.7) }
+const MapComponent = ({
+    gateways = [], selectedGateway, onGatewayClick, onMarkerClick,
+    loading, error, isRefreshing = false, colorResolver,
+    extraMarkers = [], lines = [],
+}) => {
     // İstanbul merkez koordinatları
     const defaultCenter = [41.0082, 28.9784];
     const defaultZoom = 13;
@@ -327,6 +338,66 @@ const MapComponent = ({ gateways = [], selectedGateway, onGatewayClick, onMarker
                                 zoom={15}
                             />
                         )}
+
+                        {/* Mesh / proximity / source-link lines (drawn UNDER markers) */}
+                        {lines.map((line, idx) => {
+                            if (!line?.from || !line?.to) return null;
+                            return (
+                                <Polyline
+                                    key={`line-${idx}`}
+                                    positions={[line.from, line.to]}
+                                    pathOptions={{
+                                        color: line.color || '#90a4ae',
+                                        weight: line.weight || 2,
+                                        opacity: line.opacity ?? 0.7,
+                                        dashArray: line.dashArray,
+                                    }}
+                                />
+                            );
+                        })}
+
+                        {/* Background CircleMarkers (e.g. gateways under incident pins) */}
+                        {extraMarkers.map((m) => {
+                            if (m.lat == null || m.lng == null) return null;
+                            return (
+                                <React.Fragment key={`extra-${m.id}`}>
+                                    {m.highlighted && (
+                                        <CircleMarker
+                                            center={[m.lat, m.lng]}
+                                            radius={(m.radius || 6) + 8}
+                                            pathOptions={{
+                                                color: m.color || '#1976d2',
+                                                weight: 2,
+                                                opacity: 0.9,
+                                                fillOpacity: 0,
+                                            }}
+                                        />
+                                    )}
+                                    <CircleMarker
+                                        center={[m.lat, m.lng]}
+                                        radius={m.radius || 6}
+                                        pathOptions={{
+                                            color: m.color || '#1976d2',
+                                            weight: m.highlighted ? 2 : 1,
+                                            opacity: m.opacity ?? 0.85,
+                                            fillColor: m.color || '#1976d2',
+                                            fillOpacity: m.fillOpacity ?? 0.55,
+                                        }}
+                                    >
+                                        {m.label && (
+                                            <Popup>
+                                                <Box sx={{ minWidth: 140 }}>
+                                                    <Typography variant="subtitle2" fontWeight={700}>{m.label}</Typography>
+                                                    {m.subtitle && (
+                                                        <Typography variant="caption" color="text.secondary">{m.subtitle}</Typography>
+                                                    )}
+                                                </Box>
+                                            </Popup>
+                                        )}
+                                    </CircleMarker>
+                                </React.Fragment>
+                            );
+                        })}
 
                         {/* Gateway marker'ları */}
                         {validGateways.map((gateway) => {
