@@ -34,9 +34,25 @@ exports.getUserGateways = async (req, res) => {
 // Create New Gateway
 exports.createGateway = async (req, res) => {
   try {
-    const { name, serialNumber, address } = req.body;
+    const { name, serialNumber } = req.body;
 
-    if (!name || !serialNumber || !address) {
+    // Accept either nested `address: {...}` or flat top-level fields
+    // (the Flutter mobile client sends flat `street`, `district`, `city`,
+    // `buildingNumber`, etc. — older shape that predates the nested schema).
+    // Map field-name variants here so both clients work.
+    const a = req.body.address || {};
+    const address = {
+      street:       a.street       ?? req.body.street       ?? null,
+      buildingNo:   a.buildingNo   ?? req.body.buildingNumber ?? req.body.buildingNo ?? null,
+      doorNo:       a.doorNo       ?? req.body.doorNumber   ?? req.body.doorNo     ?? null,
+      neighborhood: a.neighborhood ?? req.body.neighborhood ?? null,
+      district:     a.district     ?? req.body.district     ?? null,
+      province:     a.province     ?? req.body.province     ?? req.body.city       ?? null,
+      postalCode:   a.postalCode   ?? req.body.postalCode   ?? null,
+    };
+
+    const hasAnyAddress = Object.values(address).some((v) => v != null && String(v).trim() !== '');
+    if (!name || !serialNumber || !hasAnyAddress) {
       return res.status(400).json({
         message: 'Cihaz adı, seri numarası ve adres bilgileri zorunludur.'
       });
