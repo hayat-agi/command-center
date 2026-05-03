@@ -234,9 +234,54 @@ const sortByUrgencyThenTime = (a, b) => {
   return sortByTime(a, b);
 };
 
+const URGENCY_TIERS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const groupByUrgency = (incidents) => {
+  const groups = new Map(URGENCY_TIERS.map((u) => [u, []]));
+  groups.set('OTHER', []);
+  incidents.forEach((i) => {
+    const tier = URGENCY_TIERS.includes(i.max_urgency) ? i.max_urgency : 'OTHER';
+    groups.get(tier).push(i);
+  });
+  // Sort within each group by time (newest first)
+  groups.forEach((arr) => arr.sort(sortByTime));
+  return groups;
+};
+
 const fromNowSafe = (ts) => (ts ? dayjs(ts).fromNow() : '—');
 
 // ---- Subcomponents ---------------------------------------------------------
+
+const UrgencySectionHeader = ({ tier, count }) => {
+  const color = URGENCY_COLORS[tier] || '#9e9e9e';
+  const label = URGENCY_LABELS[tier] || tier;
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1}
+      sx={{
+        px: 1,
+        py: 0.5,
+        position: 'sticky',
+        top: 0,
+        zIndex: 1,
+        bgcolor: 'background.default',
+        borderBottom: `1px solid ${alpha(color, 0.3)}`,
+      }}
+    >
+      <Box sx={{ width: 4, height: 14, borderRadius: 1, bgcolor: color }} />
+      <Typography
+        variant="overline"
+        sx={{ fontWeight: 700, color, letterSpacing: 0.6, lineHeight: 1.2 }}
+      >
+        {label}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        ({count})
+      </Typography>
+    </Stack>
+  );
+};
 
 const StatsHeader = ({ incidents }) => {
   const counts = useMemo(() => {
@@ -683,6 +728,8 @@ const Incidents = () => {
     return [...incidents].sort(sortByUrgencyThenTime);
   }, [incidents]);
 
+  const incidentGroups = useMemo(() => groupByUrgency(incidents), [incidents]);
+
   const selectedIncident = selectedId ? incidents.find((i) => i.id === selectedId) : null;
   const sourceGateway = useMemo(
     () => findGatewayForIncident(selectedIncident, gateways),
@@ -865,7 +912,7 @@ const Incidents = () => {
               />
             </Box>
           ) : (
-            <Stack spacing={1.5} sx={{ height: '100%', overflowY: 'auto', pr: 1 }}>
+            <Box sx={{ height: '100%', overflowY: 'auto', pr: 0.5 }}>
               {loading && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
                   <CircularProgress />
@@ -880,15 +927,26 @@ const Incidents = () => {
                   </CardContent>
                 </Card>
               )}
-              {sortedIncidents.map((incident) => (
-                <IncidentCard
-                  key={incident.id}
-                  incident={incident}
-                  isSelected={selectedId === incident.id}
-                  onClick={() => setSelectedId(incident.id)}
-                />
-              ))}
-            </Stack>
+              {!loading && [...URGENCY_TIERS, 'OTHER'].map((tier) => {
+                const items = incidentGroups.get(tier) || [];
+                if (items.length === 0) return null;
+                return (
+                  <Box key={tier} sx={{ mb: 1.5 }}>
+                    <UrgencySectionHeader tier={tier} count={items.length} />
+                    <Stack spacing={0.75} sx={{ mt: 0.75 }}>
+                      {items.map((incident) => (
+                        <IncidentCard
+                          key={incident.id}
+                          incident={incident}
+                          isSelected={selectedId === incident.id}
+                          onClick={() => setSelectedId(incident.id)}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                );
+              })}
+            </Box>
           )}
         </Grid>
       </Grid>
