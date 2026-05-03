@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const path = require('path');
 // .env dosyasını bir üst klasörden bul
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -28,20 +29,29 @@ async function run() {
         process.exit(0);
     }
 
-    // 3. Yeni Admin Oluşturma (Sadece temel bilgiler yeterli)
+    // 3. Şifre — env'den al veya rastgele üret. ASLA hardcoded değer.
+    const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(12).toString('base64url');
+    const generated = !process.env.ADMIN_PASSWORD;
+
     const admin = new User({
         name: 'Sistem',
         surname: 'Yöneticisi',
         email: email,
-        password: '123456', // Modeldeki pre-save bunu otomatik hashleyecek
+        password, // Modeldeki pre-save bunu otomatik hashleyecek
         role: 'admin'
-        // tcNumber, emergencyContact vs. girmemize gerek yok!
-        // Şemadaki default değerler devreye girecek.
     });
 
     try {
         await admin.save();
         console.log('🎉 Admin başarıyla oluşturuldu:', email);
+        if (generated) {
+            console.log('');
+            console.log('   🔑  ADMIN ŞİFRESİ (sadece şimdi gösteriliyor, kaydet!):');
+            console.log('   ' + password);
+            console.log('');
+            console.log('   Sonraki çalıştırmalarda bu komut zaten admin var diye atlanır.');
+            console.log('   Şifreyi değiştirmek için DB\'yi temizleyip ADMIN_PASSWORD env ile çalıştır.');
+        }
     } catch (error) {
         console.error('❌ Admin oluşturma hatası:', error.message);
     }
