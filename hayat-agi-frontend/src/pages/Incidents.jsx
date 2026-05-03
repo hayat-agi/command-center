@@ -47,6 +47,7 @@ import InventoryIcon from '@mui/icons-material/Inventory';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MapComponent from '../components/MapComponent';
 import { getIncidents } from '../services/incidentService';
+import { getGateways } from '../api/gatewayService';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/tr';
@@ -71,6 +72,75 @@ const URGENCY_LABELS = {
 };
 
 const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+
+const GATEWAY_STATUS_COLOR = {
+  active: '#2e7d32',
+  inactive: '#9e9e9e',
+  low_battery: '#ef6c00',
+};
+
+// Mesh proximity for connection lines (km). Real BLE/LoRa range is much
+// shorter; this is an operational-overview number that keeps the network
+// visualization legible at country zoom.
+const MESH_PROXIMITY_KM = 80;
+
+// Haversine distance between two {lat, lng} points, in kilometers.
+const haversineKm = (a, b) => {
+  if (!a || !b || a.lat == null || b.lat == null) return Infinity;
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const x = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(x));
+};
+
+// Match an incident's gateway_id (string) to a Gateway document. The string
+// could be a stringified Mongo ObjectId (real flow) or a device_id (demo
+// flow), so try both.
+const findGatewayForIncident = (incident, gateways) => {
+  if (!incident || !gateways || gateways.length === 0) return null;
+  const ids = incident.gateway_ids || [];
+  if (ids.length === 0) return null;
+  for (const id of ids) {
+    const match = gateways.find(
+      (g) => g._id === id || g.serialNumber === id || g.device_id === id
+    );
+    if (match) return match;
+  }
+  return null;
+};
+
+// Build mesh-proximity lines: each gateway -> its 2 nearest neighbors (de-duped).
+const computeMeshLines = (gateways) => {
+  const valid = gateways.filter((g) => g.location?.lat != null && g.location?.lng != null);
+  const seen = new Set();
+  const lines = [];
+  for (const g of valid) {
+    const neighbors = valid
+      .filter((o) => o._id !== g._id)
+      .map((o) => ({ o, d: haversineKm(g.location, o.location) }))
+      .filter((x) => x.d <= MESH_PROXIMITY_KM)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2);
+    for (const { o } of neighbors) {
+      const key = [g._id, o._id].sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push({
+        from: [g.location.lat, g.location.lng],
+        to: [o.location.lat, o.location.lng],
+        color: '#78909c',
+        weight: 1.2,
+        opacity: 0.45,
+        dashArray: '4 6',
+      });
+    }
+  }
+  return lines;
+};
 
 const CATEGORY_LABELS = {
   MEDICAL_RESCUE: 'Tıbbi Kurtarma',
@@ -284,7 +354,7 @@ const ScoreBreakdown = ({ breakdown }) => {
   );
 };
 
-const IncidentDetail = ({ incident, onBack }) => {
+const IncidentDetail = ({ incident, onBack, sourceGateway }) => {
   const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
   const conf = CONFIRMATION[incident.confirmation] || CONFIRMATION.UNCONFIRMED;
   const ConfIcon = conf.icon;
@@ -375,6 +445,40 @@ const IncidentDetail = ({ incident, onBack }) => {
 
         <Divider sx={{ mb: 2 }} />
 
+        {sourceGateway && (
+          <>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+              KAYNAK GATEWAY
+            </Typography>
+            <Card variant="outlined" sx={{ mb: 2, bgcolor: alpha(color, 0.06), borderColor: alpha(color, 0.4) }}>
+              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                  <Box
+                    sx={{
+                      width: 10, height: 10, borderRadius: '50%',
+                      bgcolor: GATEWAY_STATUS_COLOR[sourceGateway.status] || '#9e9e9e',
+                    }}
+                  />
+                  <Typography variant="body2" fontWeight={600}>
+                    {sourceGateway.name || sourceGateway.serialNumber}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap' }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Durum: <strong>{sourceGateway.status}</strong>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Pil: <strong>%{sourceGateway.battery ?? '?'}</strong>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Sinyal: <strong>{sourceGateway.signal_quality || '?'}</strong>
+                  </Typography>
+                </Stack>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
         <Stack spacing={0.5}>
           <Stack direction="row" justifyContent="space-between">
             <Typography variant="caption" color="text.secondary">Oluşturulma</Typography>
@@ -385,7 +489,7 @@ const IncidentDetail = ({ incident, onBack }) => {
             <Typography variant="caption">{fromNowSafe(incident.last_event_at)}</Typography>
           </Stack>
           <Stack direction="row" justifyContent="space-between">
-            <Typography variant="caption" color="text.secondary">Gateway</Typography>
+            <Typography variant="caption" color="text.secondary">Gateway ID</Typography>
             <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
               {(incident.gateway_ids || []).join(', ') || '—'}
             </Typography>
@@ -410,6 +514,7 @@ const IncidentDetail = ({ incident, onBack }) => {
 
 const Incidents = () => {
   const [incidents, setIncidents] = useState([]);
+  const [gateways, setGateways] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -424,8 +529,12 @@ const Incidents = () => {
       else setIsRefreshing(true);
       setError(null);
       const filter = statusFilter === 'all' ? undefined : statusFilter;
-      const data = await getIncidents(filter);
-      setIncidents(data.incidents || []);
+      const [incidentsData, gatewaysData] = await Promise.all([
+        getIncidents(filter),
+        getGateways().catch(() => []), // gateways are best-effort; don't block on them
+      ]);
+      setIncidents(incidentsData.incidents || []);
+      setGateways(gatewaysData || []);
       setLastUpdate(new Date());
     } catch (err) {
       console.error('Olaylar yüklenirken hata:', err);
@@ -449,12 +558,55 @@ const Incidents = () => {
   }, [incidents, sortBy]);
 
   const selectedIncident = selectedId ? incidents.find((i) => i.id === selectedId) : null;
+  const sourceGateway = useMemo(
+    () => findGatewayForIncident(selectedIncident, gateways),
+    [selectedIncident, gateways]
+  );
 
   const mapItems = sortedIncidents
     .filter((i) => i.centroid?.lat != null && i.centroid?.lng != null)
     .map(incidentToGatewayShape);
 
   const colorResolver = (item) => URGENCY_COLORS[item.urgency] || '#9e9e9e';
+
+  // Background gateway markers + mesh proximity lines
+  const extraMarkers = useMemo(
+    () =>
+      gateways
+        .filter((g) => g.location?.lat != null && g.location?.lng != null)
+        .map((g) => ({
+          id: g._id,
+          lat: g.location.lat,
+          lng: g.location.lng,
+          color: GATEWAY_STATUS_COLOR[g.status] || GATEWAY_STATUS_COLOR.inactive,
+          radius: 5,
+          opacity: 0.9,
+          fillOpacity: 0.45,
+          label: g.name || g.serialNumber || 'Gateway',
+          subtitle: `Durum: ${g.status} · Pil: %${g.battery ?? '?'}`,
+          highlighted: sourceGateway && sourceGateway._id === g._id,
+        })),
+    [gateways, sourceGateway]
+  );
+
+  const meshLines = useMemo(() => computeMeshLines(gateways), [gateways]);
+
+  // Source-link: line from incident's source gateway to the incident centroid
+  const sourceLink = useMemo(() => {
+    if (!sourceGateway || !selectedIncident?.centroid) return null;
+    return {
+      from: [sourceGateway.location.lat, sourceGateway.location.lng],
+      to: [selectedIncident.centroid.lat, selectedIncident.centroid.lng],
+      color: URGENCY_COLORS[selectedIncident.max_urgency] || '#1976d2',
+      weight: 3,
+      opacity: 0.85,
+    };
+  }, [sourceGateway, selectedIncident]);
+
+  const allLines = useMemo(
+    () => (sourceLink ? [...meshLines, sourceLink] : meshLines),
+    [meshLines, sourceLink]
+  );
 
   return (
     <Box sx={{ p: 3, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
@@ -510,6 +662,8 @@ const Incidents = () => {
               error={null}
               isRefreshing={isRefreshing}
               colorResolver={colorResolver}
+              extraMarkers={extraMarkers}
+              lines={allLines}
             />
           </Paper>
         </Grid>
@@ -517,7 +671,11 @@ const Incidents = () => {
         <Grid item xs={12} md={4} sx={{ minHeight: 500, height: '100%', overflow: 'hidden' }}>
           {selectedIncident ? (
             <Box sx={{ height: '100%', overflow: 'auto' }}>
-              <IncidentDetail incident={selectedIncident} onBack={() => setSelectedId(null)} />
+              <IncidentDetail
+                incident={selectedIncident}
+                onBack={() => setSelectedId(null)}
+                sourceGateway={sourceGateway}
+              />
             </Box>
           ) : (
             <Stack spacing={1.5} sx={{ height: '100%', overflowY: 'auto', pr: 1 }}>
