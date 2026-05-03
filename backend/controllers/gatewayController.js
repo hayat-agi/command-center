@@ -58,47 +58,44 @@ exports.createGateway = async (req, res) => {
       });
     }
 
-    // Sıralama Önemli: Geocoding Özelden -> Genele
-    let addressSearchParts = [];
+    // Geocoding: try the most specific query first; if Nominatim doesn't
+    // recognise it, progressively drop precision (street → neighborhood →
+    // district → province). Many Turkish neighborhoods/streets aren't
+    // indexed in OSM, so failing the whole gateway-create over a missing
+    // street tile is too strict.
+    const trim = (s) => (s == null ? null : String(s).trim() || null);
+    const streetFull = trim(address.street)
+      ? `${trim(address.street)}${trim(address.buildingNo) ? ' ' + trim(address.buildingNo) : ''}`
+      : null;
+    const neighborhood = trim(address.neighborhood);
+    const district = trim(address.district);
+    const province = trim(address.province);
 
-    if (address.street) {
-      let streetPart = address.street.trim();
-      if (address.buildingNo) {
-        streetPart += ` ${address.buildingNo.trim()}`;
+    const queryLevels = [
+      [streetFull, neighborhood, district, province, 'Türkiye'],
+      [neighborhood, district, province, 'Türkiye'],
+      [district, province, 'Türkiye'],
+      [province, 'Türkiye'],
+    ].map((parts) => parts.filter(Boolean).join(', '))
+     .filter((q) => q && q !== 'Türkiye');
+
+    let coords = null;
+    let geocodedBy = null;
+    for (const q of queryLevels) {
+      console.log('📍 Konum aranıyor:', q);
+      coords = await getCoordsFromAddress(q);
+      if (coords) {
+        geocodedBy = q;
+        break;
       }
-      addressSearchParts.push(streetPart);
     }
-
-    if (address.neighborhood) {
-      addressSearchParts.push(address.neighborhood.trim());
-    }
-
-
-    if (address.district) {
-      addressSearchParts.push(address.district.trim());
-    }
-
-
-    if (address.province) {
-      addressSearchParts.push(address.province.trim());
-    }
-
-
-    addressSearchParts.push('Türkiye');
-
-
-    const fullAddressQuery = addressSearchParts.join(', ');
-
-    console.log('📍 Konum aranıyor:', fullAddressQuery);
-
-
-    const coords = await getCoordsFromAddress(fullAddressQuery);
 
     if (!coords) {
       return res.status(400).json({
-        message: 'Adres haritada bulunamadı. Lütfen mahalle ve sokak ismini kontrol ediniz.'
+        message: 'Adres haritada bulunamadı. İlçe ve il bilgisini kontrol ediniz.'
       });
     }
+    console.log('✅ Geocoded by:', geocodedBy);
 
     if (!isMongoDBConnected()) {
       return res.status(503).json({ message: 'Veritabanı bağlantısı yok.' });
