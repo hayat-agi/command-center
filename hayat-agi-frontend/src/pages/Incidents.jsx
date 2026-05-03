@@ -59,11 +59,15 @@ dayjs.locale('tr');
 
 // ---- Constants -------------------------------------------------------------
 
+// Tuned for legibility on a neutral light tile (CartoDB Positron). Yellow
+// at #fbc02d washed out against any tile background — bumped MEDIUM to a
+// darker amber so the four tiers stay distinguishable AND each one passes
+// a 3:1 contrast check against the map.
 const URGENCY_COLORS = {
-  CRITICAL: '#d32f2f',
-  HIGH: '#f57c00',
-  MEDIUM: '#fbc02d',
-  LOW: '#1976d2',
+  CRITICAL: '#c62828',
+  HIGH: '#e65100',
+  MEDIUM: '#f57f17',
+  LOW: '#1565c0',
 };
 
 const URGENCY_LABELS = {

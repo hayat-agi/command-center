@@ -124,14 +124,18 @@ const MapComponent = ({
     };
 
     // Harita tipi URL'leri
+    // Default = CartoDB Positron: nötr açık-gri, urgency renklerini boğmuyor
+    // — operasyonel dashboard için OSM'in renkli teması yerine kullanıyoruz.
     const getTileLayerUrl = () => {
         switch (mapType) {
             case 'satellite':
                 return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
             case 'terrain':
                 return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
-            default:
+            case 'osm':
                 return 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+            default:
+                return 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
         }
     };
 
@@ -141,8 +145,10 @@ const MapComponent = ({
                 return '&copy; <a href="https://www.esri.com/">Esri</a>';
             case 'terrain':
                 return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>';
-            default:
+            case 'osm':
                 return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+            default:
+                return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
         }
     };
 
@@ -383,6 +389,17 @@ const MapComponent = ({
                             if (m.lat == null || m.lng == null) return null;
                             return (
                                 <React.Fragment key={`extra-${m.id}`}>
+                                    {/* White outer ring boosts contrast against any tile theme */}
+                                    <CircleMarker
+                                        center={[m.lat, m.lng]}
+                                        radius={(m.radius || 6) + 2}
+                                        pathOptions={{
+                                            color: '#ffffff',
+                                            weight: 2,
+                                            opacity: 0.9,
+                                            fillOpacity: 0,
+                                        }}
+                                    />
                                     {m.highlighted && (
                                         <CircleMarker
                                             center={[m.lat, m.lng]}
@@ -401,9 +418,9 @@ const MapComponent = ({
                                         pathOptions={{
                                             color: m.color || '#1976d2',
                                             weight: m.highlighted ? 2 : 1,
-                                            opacity: m.opacity ?? 0.85,
+                                            opacity: m.opacity ?? 0.95,
                                             fillColor: m.color || '#1976d2',
-                                            fillOpacity: m.fillOpacity ?? 0.55,
+                                            fillOpacity: m.fillOpacity ?? 0.85,
                                         }}
                                     >
                                         {m.label && (
