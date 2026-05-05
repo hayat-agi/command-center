@@ -164,9 +164,6 @@ The React application (built with Vite) serves the user interface.
 | Role | Name |
 | :--- | :--- |
 | **Backend Architect & Project Lead** | Alin Kısakürek |
-| **Backend Developer** | Ahmet Karakoyun |
-| **Frontend Lead** | Berke Kuş |
-| **Visualization Specialist** | Göksu Bulut |
 
 ---
 

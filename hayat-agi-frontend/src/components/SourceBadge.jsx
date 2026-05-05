@@ -14,8 +14,11 @@ const SourceBadge = ({ source, hops, srcAddr, msgId, size = 'small' }) => {
 
   const isMesh = source === 'mesh';
   const Icon = isMesh ? HubIcon : WarningAmberIcon;
+  // hop_count = intermediate-forwarder count (PRD §3). With 2 nodes (origin
+  // → destination only) it's always 0, so showing "0h" is meaningless noise.
+  // Only surface a hop suffix when relays actually forwarded (hops >= 1).
   const label = isMesh
-    ? `Mesh${Number.isFinite(hops) ? ` · ${hops}h` : ''}`
+    ? `Mesh${Number.isFinite(hops) && hops >= 1 ? ` · ${hops} hop` : ''}`
     : 'Direkt';
 
   const tooltip = (
