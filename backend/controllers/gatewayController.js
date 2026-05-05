@@ -363,6 +363,23 @@ exports.addDisasterEvent = async (req, res) => {
     const meshHops = meshHopsHeader != null && meshHopsHeader !== ''
       ? parseInt(meshHopsHeader, 10)
       : null;
+    const meshMsgId = req.get('X-Mesh-MsgId') || null;
+
+    // Defensive dedup against firmware double-uplinks: if the same mesh
+    // packet (matching X-Mesh-MsgId) hit us within the last 30s, return
+    // the existing alert instead of creating a second one.
+    if (source === 'mesh' && meshMsgId) {
+      const recent = await Alert.findOne({
+        meshMsgId,
+        createdAt: { $gte: new Date(Date.now() - 30_000) },
+      }).lean();
+      if (recent) {
+        return res.status(200).json({
+          message: 'Duplicate mesh uplink ignored.',
+          alert: recent,
+        });
+      }
+    }
 
     const alert = await Alert.create({
       device_id: gateway.serialNumber,
@@ -380,7 +397,7 @@ exports.addDisasterEvent = async (req, res) => {
       source,
       meshHops:    Number.isFinite(meshHops) ? meshHops : null,
       meshSrcAddr: req.get('X-Mesh-Src') || null,
-      meshMsgId:   req.get('X-Mesh-MsgId') || null,
+      meshMsgId,
 
       // Legacy payload kept so existing readers don't break; will be
       // dropped once all consumers move to top-level fields.
