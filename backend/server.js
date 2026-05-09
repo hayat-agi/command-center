@@ -58,7 +58,42 @@ app.use('/api/issues', issueRoutes);
 app.use('/api/metadata', metadataRoutes);
 app.use('/api/admin/incidents', incidentRoutes);
 
+// Liveness watcher: any gateway whose last_seen is older than the timeout
+// (or never seen at all) gets flipped to status:inactive. The heartbeat
+// endpoint is the only thing that pushes status back to active/low_battery.
+//
+// Tunables via env:
+//   HEARTBEAT_TIMEOUT_MS   default 90000  — staleness threshold
+//   HEARTBEAT_CHECK_MS     default 30000  — how often we sweep
+const HEARTBEAT_TIMEOUT_MS = parseInt(process.env.HEARTBEAT_TIMEOUT_MS, 10) || 90 * 1000;
+const HEARTBEAT_CHECK_MS = parseInt(process.env.HEARTBEAT_CHECK_MS, 10) || 30 * 1000;
+
+const startLivenessWatcher = () => {
+  const Gateway = require('./models/Gateway');
+  const mongoose = require('mongoose');
+  setInterval(async () => {
+    if (mongoose.connection.readyState !== 1) return;
+    try {
+      const cutoff = new Date(Date.now() - HEARTBEAT_TIMEOUT_MS);
+      const result = await Gateway.updateMany(
+        {
+          status: { $ne: 'inactive' },
+          $or: [{ last_seen: { $lt: cutoff } }, { last_seen: null }],
+        },
+        { $set: { status: 'inactive' } }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`[liveness] flipped ${result.modifiedCount} gateway(s) to inactive (stale > ${HEARTBEAT_TIMEOUT_MS}ms)`);
+      }
+    } catch (err) {
+      console.error('[liveness] watcher error:', err.message);
+    }
+  }, HEARTBEAT_CHECK_MS);
+  console.log(`[liveness] watcher armed: timeout=${HEARTBEAT_TIMEOUT_MS}ms, sweep=${HEARTBEAT_CHECK_MS}ms`);
+};
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  startLivenessWatcher();
 });
