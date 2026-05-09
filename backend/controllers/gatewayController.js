@@ -9,7 +9,9 @@ const isMongoDBConnected = () => mongoose.connection.readyState === 1;
 exports.getGateways = async (req, res) => {
   try {
     if (isMongoDBConnected()) {
-      const gateways = await Gateway.find().sort({ createdAt: -1 });
+      const gateways = await Gateway.find()
+        .populate('owner', 'name surname email role')
+        .sort({ createdAt: -1 });
       res.status(200).json(gateways);
     }
   } catch (error) {
