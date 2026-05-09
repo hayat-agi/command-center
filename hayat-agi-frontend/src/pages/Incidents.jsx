@@ -13,7 +13,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Grid,
   Divider,
   alpha,
   CircularProgress,
@@ -27,10 +26,22 @@ import {
   DialogActions,
   FormControlLabel,
   Checkbox,
+  TextField,
+  InputAdornment,
+  Fab,
+  Badge,
+  Collapse,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import SearchIcon from '@mui/icons-material/Search';
+import CloseIcon from '@mui/icons-material/Close';
+import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import GroupIcon from '@mui/icons-material/Group';
 import ChildCareIcon from '@mui/icons-material/ChildCare';
 import ElderlyIcon from '@mui/icons-material/Elderly';
@@ -251,7 +262,7 @@ const fromNowSafe = (ts) => (ts ? dayjs(ts).fromNow() : '—');
 
 // ---- Subcomponents ---------------------------------------------------------
 
-const UrgencySectionHeader = ({ tier, count }) => {
+const UrgencySectionHeader = ({ tier, count, collapsed, onToggle }) => {
   const color = URGENCY_COLORS[tier] || '#9e9e9e';
   const label = URGENCY_LABELS[tier] || tier;
   return (
@@ -259,14 +270,18 @@ const UrgencySectionHeader = ({ tier, count }) => {
       direction="row"
       alignItems="center"
       spacing={1}
+      onClick={onToggle}
       sx={{
         px: 1,
         py: 0.5,
         position: 'sticky',
         top: 0,
         zIndex: 1,
+        cursor: 'pointer',
+        userSelect: 'none',
         bgcolor: 'background.default',
         borderBottom: `1px solid ${alpha(color, 0.3)}`,
+        '&:hover': { bgcolor: alpha(color, 0.05) },
       }}
     >
       <Box sx={{ width: 4, height: 14, borderRadius: 1, bgcolor: color }} />
@@ -279,11 +294,13 @@ const UrgencySectionHeader = ({ tier, count }) => {
       <Typography variant="caption" color="text.secondary">
         ({count})
       </Typography>
+      <Box sx={{ flex: 1 }} />
+      {collapsed ? <ExpandMoreIcon fontSize="small" sx={{ color }} /> : <ExpandLessIcon fontSize="small" sx={{ color }} />}
     </Stack>
   );
 };
 
-const StatsHeader = ({ incidents }) => {
+const CompactStatsStrip = ({ incidents }) => {
   const counts = useMemo(() => {
     const c = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
     incidents.forEach((i) => {
@@ -293,29 +310,32 @@ const StatsHeader = ({ incidents }) => {
   }, [incidents]);
 
   return (
-    <Stack direction="row" spacing={1.5} sx={{ mb: 2, flexWrap: 'wrap' }}>
-      {['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((u) => (
-        <Card
-          key={u}
-          variant="outlined"
-          sx={{
-            flex: '1 1 140px',
-            borderTop: `3px solid ${URGENCY_COLORS[u]}`,
-            transition: 'transform 0.15s',
-            '&:hover': { transform: 'translateY(-2px)' },
-          }}
-        >
-          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Stack direction="row" alignItems="baseline" spacing={1}>
-              <Typography variant="h4" fontWeight={800} sx={{ color: URGENCY_COLORS[u] }}>
-                {counts[u]}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                {URGENCY_LABELS[u]}
-              </Typography>
-            </Stack>
-          </CardContent>
-        </Card>
+    <Stack
+      direction="row"
+      spacing={0.75}
+      alignItems="center"
+      sx={{ display: { xs: 'none', md: 'flex' } }}
+    >
+      {URGENCY_TIERS.map((u) => (
+        <Tooltip key={u} title={URGENCY_LABELS[u]} arrow>
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.5}
+            sx={{
+              px: 1,
+              py: 0.5,
+              borderRadius: 1,
+              border: `1px solid ${alpha(URGENCY_COLORS[u], 0.4)}`,
+              bgcolor: alpha(URGENCY_COLORS[u], 0.08),
+            }}
+          >
+            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: URGENCY_COLORS[u] }} />
+            <Typography variant="caption" sx={{ fontWeight: 700, color: URGENCY_COLORS[u], minWidth: 14 }}>
+              {counts[u]}
+            </Typography>
+          </Stack>
+        </Tooltip>
       ))}
     </Stack>
   );
@@ -687,6 +707,8 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
 // ---- Page ------------------------------------------------------------------
 
 const Incidents = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [incidents, setIncidents] = useState([]);
   const [gateways, setGateways] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -695,6 +717,11 @@ const Incidents = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [statusFilter, setStatusFilter] = useState('open');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [listOpen, setListOpen] = useState(true);
+  // Per-tier collapse state. CRITICAL/HIGH default open, MEDIUM/LOW collapsed
+  // when there are many incidents to keep the panel scannable.
+  const [collapsedTiers, setCollapsedTiers] = useState({ MEDIUM: false, LOW: false, OTHER: true });
 
   const loadIncidents = useCallback(async (isInitial = false) => {
     try {
@@ -728,7 +755,22 @@ const Incidents = () => {
     return [...incidents].sort(sortByUrgencyThenTime);
   }, [incidents]);
 
-  const incidentGroups = useMemo(() => groupByUrgency(incidents), [incidents]);
+  const filteredIncidents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return incidents;
+    return incidents.filter((i) => {
+      const summary = (i.auto_summary || '').toLowerCase();
+      const cats = (i.categories || []).map((c) => (CATEGORY_LABELS[c] || c).toLowerCase());
+      return summary.includes(q) || cats.some((c) => c.includes(q));
+    });
+  }, [incidents, searchQuery]);
+
+  const incidentGroups = useMemo(() => groupByUrgency(filteredIncidents), [filteredIncidents]);
+
+  const toggleTier = useCallback(
+    (tier) => setCollapsedTiers((prev) => ({ ...prev, [tier]: !prev[tier] })),
+    []
+  );
 
   const selectedIncident = selectedId ? incidents.find((i) => i.id === selectedId) : null;
   const sourceGateway = useMemo(
@@ -820,26 +862,66 @@ const Incidents = () => {
     [meshLines, sourceLink]
   );
 
+  // On mobile, opening a detail panel covers the whole screen. Keep list
+  // closed when a detail is open to avoid stacking confusion.
+  const showListPanel = listOpen && (!isMobile || !selectedIncident);
+  const connectedClusters = clusters.filter((c) => c.length >= 2).length;
+  const isolatedClusters = clusters.filter((c) => c.length === 1).length;
+
+  const handleSelect = (id) => {
+    setSelectedId(id);
+    if (isMobile) setListOpen(false);
+  };
+
   return (
-    <Box sx={{ p: 3, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <ReportProblemIcon color="error" />
-          <Typography variant="h5" fontWeight={700}>Olaylar</Typography>
-          <Chip label={`${incidents.length}`} size="small" color="error" />
-        </Stack>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <FormControl size="small" sx={{ minWidth: 110 }}>
-            <InputLabel>Durum</InputLabel>
-            <Select value={statusFilter} label="Durum" onChange={(e) => setStatusFilter(e.target.value)}>
-              <MenuItem value="open">Açık</MenuItem>
-              <MenuItem value="closed">Kapalı</MenuItem>
-              <MenuItem value="all">Hepsi</MenuItem>
-            </Select>
-          </FormControl>
+    <Box sx={{ position: 'relative', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+      {/* Full-bleed map background */}
+      <Box sx={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+        <MapComponent
+          gateways={mapItems}
+          selectedGateway={selectedIncident ? incidentToGatewayShape(selectedIncident) : null}
+          onMarkerClick={(item) => handleSelect(item._id)}
+          loading={loading}
+          error={null}
+          isRefreshing={isRefreshing}
+          colorResolver={colorResolver}
+          extraMarkers={extraMarkers}
+          lines={allLines}
+          coverageCircles={coverageCircles}
+        />
+      </Box>
+
+      {/* Floating top header — sits to the right of the list panel so the
+          two pieces don't visually overlap. */}
+      <Paper
+        elevation={3}
+        sx={{
+          position: 'absolute',
+          top: 12,
+          left: { xs: 12, sm: showListPanel ? 364 : 12, md: showListPanel ? 384 : 12 },
+          right: 12,
+          zIndex: 4,
+          py: 0.75,
+          px: 1.5,
+          borderRadius: 2,
+          bgcolor: alpha(theme.palette.background.paper, 0.96),
+          backdropFilter: 'blur(8px)',
+          transition: 'left 0.2s',
+        }}
+      >
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+          <CompactStatsStrip incidents={incidents} />
+
+          <Box sx={{ flex: 1 }} />
+
           {lastUpdate && (
             <Tooltip title={`Son güncelleme: ${dayjs(lastUpdate).format('HH:mm:ss')}`}>
-              <Stack direction="row" alignItems="center" spacing={0.5}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.5}
+                sx={{ display: { xs: 'none', sm: 'flex' } }}
+              >
                 <AccessTimeIcon fontSize="small" color="action" />
                 <Typography variant="caption" color="text.secondary">
                   {fromNowSafe(lastUpdate)}
@@ -848,108 +930,238 @@ const Incidents = () => {
             </Tooltip>
           )}
           <Tooltip title="Yenile">
-            <IconButton onClick={() => loadIncidents(false)} disabled={isRefreshing}>
-              <RefreshIcon />
+            <IconButton size="small" onClick={() => loadIncidents(false)} disabled={isRefreshing}>
+              <RefreshIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         </Stack>
-      </Stack>
+      </Paper>
 
-      <StatsHeader incidents={incidents} />
-
-      {/* Network coverage callout — visible only when there ARE clusters to talk about. */}
-      {clusters.length > 0 && (
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2, flexWrap: 'wrap' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Ağ
-          </Typography>
-          <Chip
-            size="small"
-            label={`${clusters.filter((c) => c.length >= 2).length} bağlı küme`}
-            sx={{ bgcolor: alpha(CLUSTER_PALETTE[0], 0.15), color: CLUSTER_PALETTE[0], fontWeight: 700 }}
-          />
-          {clusters.filter((c) => c.length === 1).length > 0 && (
-            <Chip
-              size="small"
-              label={`${clusters.filter((c) => c.length === 1).length} izole gateway`}
-              sx={{ bgcolor: alpha(GATEWAY_ISOLATED_COLOR, 0.15), color: GATEWAY_ISOLATED_COLOR, fontWeight: 700 }}
-            />
-          )}
-          <Typography variant="caption" color="text.secondary">
-            Kapsama: {DEFAULT_COVERAGE_M} m / gateway · İzole noktalar arada bir röle gateway'e ihtiyaç duyar.
-          </Typography>
-        </Stack>
+      {error && (
+        <MuiAlert
+          severity="error"
+          sx={{ position: 'absolute', top: 70, left: 12, right: 12, zIndex: 4 }}
+        >
+          {error}
+        </MuiAlert>
       )}
 
-      {error && <MuiAlert severity="error" sx={{ mb: 2 }}>{error}</MuiAlert>}
-
-      <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-        <Grid size={{ xs: 12, md: 7 }} sx={{ minHeight: 420 }}>
-          <Paper sx={{ height: '100%', minHeight: 420, position: 'relative', overflow: 'hidden' }}>
-            <MapComponent
-              gateways={mapItems}
-              selectedGateway={selectedIncident ? incidentToGatewayShape(selectedIncident) : null}
-              onMarkerClick={(item) => setSelectedId(item._id)}
-              loading={loading}
-              error={null}
-              isRefreshing={isRefreshing}
-              colorResolver={colorResolver}
-              extraMarkers={extraMarkers}
-              lines={allLines}
-              coverageCircles={coverageCircles}
+      {/* Network coverage callout — bottom-left overlay on the map */}
+      {clusters.length > 0 && (
+        <Paper
+          elevation={2}
+          sx={{
+            position: 'absolute',
+            bottom: 12,
+            left: 12,
+            zIndex: 2,
+            px: 1.25,
+            py: 0.75,
+            borderRadius: 1.5,
+            bgcolor: alpha(theme.palette.background.paper, 0.92),
+            backdropFilter: 'blur(6px)',
+            display: { xs: 'none', sm: 'block' },
+            maxWidth: 320,
+          }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}
+            >
+              Ağ
+            </Typography>
+            <Chip
+              size="small"
+              label={`${connectedClusters} bağlı`}
+              sx={{
+                height: 20,
+                bgcolor: alpha(CLUSTER_PALETTE[0], 0.15),
+                color: CLUSTER_PALETTE[0],
+                fontWeight: 700,
+              }}
             />
-          </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 5 }} sx={{ minHeight: 420, height: '100%', overflow: 'hidden' }}>
-          {selectedIncident ? (
-            <Box sx={{ height: '100%', overflow: 'auto' }}>
-              <IncidentDetail
-                incident={selectedIncident}
-                onBack={() => setSelectedId(null)}
-                sourceGateway={sourceGateway}
-                onClosed={() => { setSelectedId(null); loadIncidents(false); }}
+            {isolatedClusters > 0 && (
+              <Chip
+                size="small"
+                label={`${isolatedClusters} izole`}
+                sx={{
+                  height: 20,
+                  bgcolor: alpha(GATEWAY_ISOLATED_COLOR, 0.15),
+                  color: GATEWAY_ISOLATED_COLOR,
+                  fontWeight: 700,
+                }}
               />
-            </Box>
-          ) : (
-            <Box sx={{ height: '100%', overflowY: 'auto', pr: 0.5 }}>
-              {loading && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                  <CircularProgress />
-                </Box>
-              )}
-              {!loading && sortedIncidents.length === 0 && (
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="body2" color="text.secondary" align="center">
-                      Bu filtre için olay yok.
-                    </Typography>
-                  </CardContent>
-                </Card>
-              )}
-              {!loading && [...URGENCY_TIERS, 'OTHER'].map((tier) => {
+            )}
+            <Typography variant="caption" color="text.secondary">
+              {DEFAULT_COVERAGE_M}m
+            </Typography>
+          </Stack>
+        </Paper>
+      )}
+
+      {/* Floating list panel — full height like a Google Maps sidebar */}
+      {showListPanel && (
+        <Paper
+          elevation={6}
+          sx={{
+            position: 'absolute',
+            left: 12,
+            top: 12,
+            bottom: 12,
+            zIndex: 3,
+            width: { xs: 'calc(100vw - 24px)', sm: 340, md: 360 },
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: 2,
+            overflow: 'hidden',
+            bgcolor: alpha(theme.palette.background.paper, 0.97),
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          {/* Panel title + close */}
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.75}
+            sx={{ px: 1.5, pt: 1.25, pb: 0.75 }}
+          >
+            <ReportProblemIcon color="error" sx={{ fontSize: 18 }} />
+            <Typography variant="subtitle2" fontWeight={700}>
+              Olay Listesi
+            </Typography>
+            <Chip
+              label={incidents.length}
+              size="small"
+              color="error"
+              sx={{ height: 18, minWidth: 24, fontWeight: 700, fontSize: '0.7rem' }}
+            />
+            <Box sx={{ flex: 1 }} />
+            <Tooltip title="Listeyi gizle">
+              <IconButton size="small" onClick={() => setListOpen(false)}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+
+          {/* Search */}
+          <Box sx={{ px: 1, pb: 1, borderBottom: 1, borderColor: 'divider' }}>
+            <TextField
+              size="small"
+              fullWidth
+              placeholder="Olaylarda ara..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchQuery('')}>
+                      <CloseIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+              }}
+            />
+          </Box>
+
+          {/* Scrollable list body */}
+          <Box sx={{ flex: 1, overflowY: 'auto', p: 1 }}>
+            {loading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress size={24} />
+              </Box>
+            )}
+            {!loading && filteredIncidents.length === 0 && (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  {searchQuery ? 'Aramanla eşleşen olay yok.' : 'Bu filtre için olay yok.'}
+                </Typography>
+              </Box>
+            )}
+            {!loading &&
+              [...URGENCY_TIERS, 'OTHER'].map((tier) => {
                 const items = incidentGroups.get(tier) || [];
                 if (items.length === 0) return null;
+                const isCollapsed = !!collapsedTiers[tier];
                 return (
                   <Box key={tier} sx={{ mb: 1.5 }}>
-                    <UrgencySectionHeader tier={tier} count={items.length} />
-                    <Stack spacing={0.75} sx={{ mt: 0.75 }}>
-                      {items.map((incident) => (
-                        <IncidentCard
-                          key={incident.id}
-                          incident={incident}
-                          isSelected={selectedId === incident.id}
-                          onClick={() => setSelectedId(incident.id)}
-                        />
-                      ))}
-                    </Stack>
+                    <UrgencySectionHeader
+                      tier={tier}
+                      count={items.length}
+                      collapsed={isCollapsed}
+                      onToggle={() => toggleTier(tier)}
+                    />
+                    <Collapse in={!isCollapsed} timeout="auto" unmountOnExit>
+                      <Stack spacing={0.75} sx={{ mt: 0.75 }}>
+                        {items.map((incident) => (
+                          <IncidentCard
+                            key={incident.id}
+                            incident={incident}
+                            isSelected={selectedId === incident.id}
+                            onClick={() => handleSelect(incident.id)}
+                          />
+                        ))}
+                      </Stack>
+                    </Collapse>
                   </Box>
                 );
               })}
-            </Box>
-          )}
-        </Grid>
-      </Grid>
+          </Box>
+        </Paper>
+      )}
+
+      {/* Floating "open list" FAB when list is hidden */}
+      {!showListPanel && (
+        <Tooltip title="Olay listesini aç">
+          <Fab
+            size="medium"
+            color="primary"
+            onClick={() => setListOpen(true)}
+            sx={{ position: 'absolute', left: 12, top: 12, zIndex: 3 }}
+          >
+            <Badge badgeContent={incidents.length} color="error" max={99}>
+              <FormatListBulletedIcon />
+            </Badge>
+          </Fab>
+        </Tooltip>
+      )}
+
+      {/* Floating detail panel */}
+      {selectedIncident && (
+        <Paper
+          elevation={8}
+          sx={{
+            position: 'absolute',
+            top: 76,
+            bottom: 12,
+            right: 12,
+            // detail panel sits below header so they don't overlap
+            left: { xs: 12, sm: 'auto' },
+            width: { xs: 'auto', sm: 380, md: 420 },
+            zIndex: 5,
+            borderRadius: 2,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <IncidentDetail
+            incident={selectedIncident}
+            onBack={() => setSelectedId(null)}
+            sourceGateway={sourceGateway}
+            onClosed={() => {
+              setSelectedId(null);
+              loadIncidents(false);
+            }}
+          />
+        </Paper>
+      )}
     </Box>
   );
 };
