@@ -36,11 +36,15 @@ import SecurityIcon from '@mui/icons-material/Security';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 
 const drawerWidth = 280;
+// Order reflects operational priority: incident triage first (used
+// continuously during a disaster), fleet health second (infrastructure
+// check), then admin views.
 const menuItems = [
-  { text: 'Canlı Harita', icon: <MapIcon />, path: '/dashboard/harita' },
   { text: 'Olaylar', icon: <ReportProblemIcon />, path: '/dashboard/incidents' },
+  { text: 'Cihaz Sağlığı', icon: <MonitorHeartIcon />, path: '/dashboard/harita' },
   { text: 'Cihaz Listesi', icon: <RouterIcon />, path: '/dashboard/gateways' },
   { text: 'Bildirilen Sorunlar', icon: <BugReportIcon />, path: '/dashboard/sorunlar' }
 ];
