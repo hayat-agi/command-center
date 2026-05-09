@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const gatewayController = require('../controllers/gatewayController');
-const { protect, protectOrMeshUplink } = require('../middleware/authMiddleware');
+const { protect, protectOrMeshUplink, requireDeviceToken } = require('../middleware/authMiddleware');
 
 router.get('/', protect, gatewayController.getGateways);
 router.get('/user', protect, gatewayController.getUserGateways);
+
+// Heartbeat MUST come before any /:id route — Express matches in order and
+// "heartbeat" would otherwise be treated as an :id by an earlier rule.
+router.post('/heartbeat', requireDeviceToken, gatewayController.heartbeat);
 
 router.put('/:id', protect, gatewayController.updateGateway);
 

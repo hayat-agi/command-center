@@ -174,7 +174,83 @@ exports.deleteGateway = async (req, res) => {
   }
 };
 
-// PUT /gateways/:id 
+// POST /gateways/heartbeat — hardware liveness ping from a registered ESP32.
+//
+// Auth: shared device token via X-Device-Token (see requireDeviceToken
+// middleware). Body:
+//   serialNumber:    string, MAC-style — must match a registered gateway
+//   battery:         0-100, integer percent (required)
+//   signal_rssi:     dBm, typical -40 (great) to -110 (dead). Optional.
+//   firmware_version: string, optional, useful for fleet visibility
+//
+// Side effects:
+//   - last_seen=now
+//   - battery / signal_quality updated
+//   - status derived: low_battery if <20%, else active
+//
+// The liveness watcher (server.js) is what flips active→inactive when no
+// heartbeat arrives within HEARTBEAT_TIMEOUT_MS — this endpoint only knows
+// "I just saw a device".
+exports.heartbeat = async (req, res) => {
+  try {
+    if (!isMongoDBConnected()) {
+      return res.status(503).json({ message: 'Veritabanı bağlantısı yok.' });
+    }
+
+    const { serialNumber, battery, signal_rssi, firmware_version } = req.body || {};
+
+    if (!serialNumber || typeof battery !== 'number') {
+      return res.status(400).json({
+        message: 'serialNumber ve battery (0-100) gerekli.',
+      });
+    }
+    if (battery < 0 || battery > 100) {
+      return res.status(400).json({ message: 'battery 0-100 aralığında olmalı.' });
+    }
+
+    // Map dBm → categorical signal quality. Thresholds match what the mesh
+    // ops literature treats as "usable" / "marginal" for ESP32 LoRa setups.
+    let signalQuality = 'none';
+    if (typeof signal_rssi === 'number') {
+      if (signal_rssi >= -75) signalQuality = 'strong';
+      else if (signal_rssi >= -95) signalQuality = 'medium';
+      else signalQuality = 'weak';
+    }
+
+    const status = battery < 20 ? 'low_battery' : 'active';
+
+    const update = {
+      status,
+      battery,
+      signal_quality: signalQuality,
+      last_seen: new Date(),
+    };
+    if (firmware_version) update.firmware_version = firmware_version;
+
+    const gateway = await Gateway.findOneAndUpdate(
+      { serialNumber },
+      { $set: update },
+      { new: true }
+    );
+
+    if (!gateway) {
+      return res.status(404).json({
+        message: 'Bu seri numarasıyla kayıtlı cihaz yok.',
+      });
+    }
+
+    res.json({
+      ok: true,
+      next_heartbeat_in_ms: 30000,
+      status: gateway.status,
+    });
+  } catch (error) {
+    console.error('Error processing heartbeat:', error);
+    res.status(500).json({ message: 'Sunucu hatası' });
+  }
+};
+
+// PUT /gateways/:id
 exports.updateGateway = async (req, res) => {
   try {
     if (!isMongoDBConnected()) {
