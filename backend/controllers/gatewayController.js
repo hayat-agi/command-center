@@ -119,12 +119,15 @@ exports.createGateway = async (req, res) => {
         postalCode: address.postalCode
       },
       location: coords,
+      // Truthful default: a freshly-registered gateway is inactive until the
+      // physical device sends its first heartbeat. The liveness watcher in
+      // server.js flips status to 'active' only when the firmware checks in.
       status: 'inactive',
-      battery: 100,
-      signal_quality: 'strong',
+      battery: 0,
+      signal_quality: 'none',
       connected_devices: 0,
       uptime: 0,
-      last_seen: new Date(),
+      last_seen: null,
     });
 
     await newGateway.save();
