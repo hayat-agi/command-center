@@ -21,6 +21,8 @@ import MyLocationIcon from '@mui/icons-material/MyLocation';
 import RouterIcon from '@mui/icons-material/Router';
 import BatteryStdIcon from '@mui/icons-material/BatteryStd';
 import MapIcon from '@mui/icons-material/Map';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
 
 // Leaflet default icon sorununu çöz
 delete L.Icon.Default.prototype._getIconUrl;
@@ -228,6 +230,31 @@ const MapComponent = ({
                         flexDirection: 'column'
                     }}
                 >
+                    <Tooltip title="Yakınlaştır">
+                        <span>
+                            <IconButton
+                                size="small"
+                                disabled={!mapInstance}
+                                onClick={() => mapInstance && mapInstance.zoomIn()}
+                                sx={{ color: 'text.primary', mb: 0.5, minWidth: 32, '&:hover': { bgcolor: 'action.hover' } }}
+                            >
+                                <AddIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                    <Tooltip title="Uzaklaştır">
+                        <span>
+                            <IconButton
+                                size="small"
+                                disabled={!mapInstance}
+                                onClick={() => mapInstance && mapInstance.zoomOut()}
+                                sx={{ color: 'text.primary', mb: 0.5, minWidth: 32, '&:hover': { bgcolor: 'action.hover' } }}
+                            >
+                                <RemoveIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                    <Box sx={{ height: '1px', bgcolor: 'divider', my: 0.5 }} />
                     <Tooltip title="Standart Harita">
                         <IconButton
                             size="small"
@@ -265,6 +292,7 @@ const MapComponent = ({
                             sx={{
                                 bgcolor: mapType === 'terrain' ? 'primary.main' : 'transparent',
                                 color: mapType === 'terrain' ? 'white' : 'text.primary',
+                                mb: 0.5,
                                 minWidth: 32,
                                 '&:hover': { bgcolor: mapType === 'terrain' ? 'primary.dark' : 'action.hover' }
                             }}
@@ -272,31 +300,36 @@ const MapComponent = ({
                             <LayersIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                </Paper>
-
-                {validGateways.length > 0 && (
-                    <Tooltip title="Tüm Cihazları Göster">
-                        <IconButton
-                            size="small"
-                            onClick={() => {
-                                if (mapInstance && validGateways.length > 0) {
-                                    const bounds = L.latLngBounds(
-                                        validGateways.map(gw => [gw.location.lat, gw.location.lng])
-                                    );
-                                    mapInstance.fitBounds(bounds, { padding: [50, 50] });
-                                }
-                            }}
-                            sx={{
-                                bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                backdropFilter: 'blur(10px)',
-                                boxShadow: 2,
-                                '&:hover': { bgcolor: 'rgba(255, 255, 255, 1)' }
-                            }}
-                        >
-                            <MyLocationIcon fontSize="small" />
-                        </IconButton>
+                    <Box sx={{ height: '1px', bgcolor: 'divider', my: 0.5 }} />
+                    <Tooltip title={validGateways.length > 0 ? 'Tüm Cihazları Göster' : 'Türkiye genel görünümü'}>
+                        <span>
+                            <IconButton
+                                size="small"
+                                disabled={!mapInstance}
+                                onClick={() => {
+                                    if (!mapInstance) return;
+                                    if (validGateways.length > 0) {
+                                        const bounds = L.latLngBounds(
+                                            validGateways.map(gw => [gw.location.lat, gw.location.lng])
+                                        );
+                                        mapInstance.fitBounds(bounds, { padding: [50, 50] });
+                                    } else {
+                                        // No markers — fall back to a Türkiye-wide view.
+                                        mapInstance.setView([39, 35], 6);
+                                    }
+                                }}
+                                sx={{
+                                    bgcolor: 'transparent',
+                                    color: 'text.primary',
+                                    minWidth: 32,
+                                    '&:hover': { bgcolor: 'action.hover' }
+                                }}
+                            >
+                                <MyLocationIcon fontSize="small" />
+                            </IconButton>
+                        </span>
                     </Tooltip>
-                )}
+                </Paper>
             </Box>
 
             <Box sx={{ flex: 1, position: 'relative', minHeight: '500px' }}>
