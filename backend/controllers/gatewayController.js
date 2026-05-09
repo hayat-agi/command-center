@@ -73,8 +73,15 @@ exports.createGateway = async (req, res) => {
     const district = trim(address.district);
     const province = trim(address.province);
 
+    // Try a landmark/POI search before the structured address — users often
+    // type a building name ("Çankaya Üniversitesi") into the street field,
+    // and Nominatim's structured matcher can't combine that with a
+    // neighborhood/district. A simple "{street}, {province}" query lets
+    // Nominatim's general search hit the named POI directly.
+    const street = trim(address.street);
     const queryLevels = [
-      [streetFull, neighborhood, district, province, 'Türkiye'],
+      [street, province, 'Türkiye'],                                 // POI / landmark (new)
+      [streetFull, neighborhood, district, province, 'Türkiye'],     // structured full
       [neighborhood, district, province, 'Türkiye'],
       [district, province, 'Türkiye'],
       [province, 'Türkiye'],
