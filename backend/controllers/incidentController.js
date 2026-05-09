@@ -1,4 +1,5 @@
 const axios = require('axios');
+const http = require('http');
 const mongoose = require('mongoose');
 const Alert = require('../models/Alert');
 const Gateway = require('../models/Gateway');
@@ -6,6 +7,37 @@ const Gateway = require('../models/Gateway');
 const AI_FUSION_URL = process.env.AI_FUSION_URL || 'http://localhost:8000';
 const FUSION_INGEST_TOKEN = process.env.FUSION_INGEST_TOKEN || '';
 const PROXY_TIMEOUT_MS = 5000;
+
+// Disable keep-alive on the proxy hop to ai-fusion. With keep-alive on,
+// axios was reusing TCP sockets that ai-fusion's uvicorn had already
+// closed — every ~3rd request returned 'AI fusion service unreachable'
+// in 7ms because the first packet hit a half-dead socket. Fresh socket
+// per request costs ~1ms and is reliable.
+const proxyAgent = new http.Agent({ keepAlive: false });
+const fusion = axios.create({
+  baseURL: AI_FUSION_URL,
+  timeout: PROXY_TIMEOUT_MS,
+  httpAgent: proxyAgent,
+});
+
+// Single one-shot retry on connection-reset-style failures so the
+// occasional flaky socket doesn't surface to the operator UI.
+const isTransientNetworkError = (err) => {
+  if (err.response) return false; // got an HTTP response → not transient
+  const code = err.code || '';
+  return ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'ECONNABORTED'].includes(code);
+};
+
+const fusionRequest = async (config) => {
+  try {
+    return await fusion.request(config);
+  } catch (err) {
+    if (isTransientNetworkError(err)) {
+      return fusion.request(config);
+    }
+    throw err;
+  }
+};
 
 const upstreamHeaders = () =>
   FUSION_INGEST_TOKEN ? { Authorization: `Bearer ${FUSION_INGEST_TOKEN}` } : {};
@@ -17,10 +49,11 @@ const upstreamHeaders = () =>
 // hayat-agi-fusion/app/store.py — so we can't query them locally.
 exports.listIncidents = async (req, res) => {
   try {
-    const upstream = await axios.get(`${AI_FUSION_URL}/incidents`, {
+    const upstream = await fusionRequest({
+      method: 'get',
+      url: '/incidents',
       params: req.query,
       headers: upstreamHeaders(),
-      timeout: PROXY_TIMEOUT_MS,
     });
     res.status(upstream.status).json(upstream.data);
   } catch (err) {
@@ -41,9 +74,10 @@ exports.listIncidents = async (req, res) => {
 exports.getIncidentMessages = async (req, res) => {
   const { id } = req.params;
   try {
-    const upstream = await axios.get(`${AI_FUSION_URL}/incidents/${id}`, {
+    const upstream = await fusionRequest({
+      method: 'get',
+      url: `/incidents/${id}`,
       headers: upstreamHeaders(),
-      timeout: PROXY_TIMEOUT_MS,
     });
     const eventIds = upstream.data?.event_ids || [];
     if (eventIds.length === 0) return res.json({ messages: [] });
@@ -113,15 +147,13 @@ exports.getIncidentMessages = async (req, res) => {
 exports.closeIncident = async (req, res) => {
   const { id } = req.params;
   try {
-    const upstream = await axios.post(
-      `${AI_FUSION_URL}/incidents/${id}/close`,
-      null,
-      {
-        params: { false_alarm: req.query.false_alarm === 'true' },
-        headers: upstreamHeaders(),
-        timeout: PROXY_TIMEOUT_MS,
-      }
-    );
+    const upstream = await fusionRequest({
+      method: 'post',
+      url: `/incidents/${id}/close`,
+      data: null,
+      params: { false_alarm: req.query.false_alarm === 'true' },
+      headers: upstreamHeaders(),
+    });
     res.status(upstream.status).json(upstream.data);
   } catch (err) {
     if (err.response?.status === 404) {
