@@ -157,10 +157,15 @@ exports.deleteGateway = async (req, res) => {
     if (!isMongoDBConnected()) {
       return res.status(503).json({ message: 'Veritabanı bağlantısı yok.' });
     }
-    const gateway = await Gateway.findOneAndDelete({
-      _id: req.params.id,
-      owner: req.user._id
-    });
+
+    // Admins can delete any gateway (operational override on the
+    // /dashboard/gateways management page); regular users can only delete
+    // gateways they own.
+    const filter = req.user?.role === 'admin'
+      ? { _id: req.params.id }
+      : { _id: req.params.id, owner: req.user._id };
+
+    const gateway = await Gateway.findOneAndDelete(filter);
 
     if (!gateway) {
       return res.status(404).json({
