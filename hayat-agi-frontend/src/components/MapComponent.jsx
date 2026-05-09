@@ -203,11 +203,13 @@ const MapComponent = ({
                 </Box>
             )}
 
-            {/* Harita Kontrolleri */}
+            {/* Harita Kontrolleri — bottom-right so they don't fight with the
+                page-level floating header at top. Refresh toast removed; the
+                page-level last-update chip already conveys polling activity. */}
             <Box
                 sx={{
                     position: 'absolute',
-                    top: 10,
+                    bottom: 24,
                     right: 10,
                     zIndex: 1000,
                     display: 'flex',
@@ -215,26 +217,6 @@ const MapComponent = ({
                     gap: 1
                 }}
             >
-                {isRefreshing && (
-                    <Paper
-                        elevation={3}
-                        sx={{
-                            p: 1,
-                            borderRadius: 2,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                            backdropFilter: 'blur(10px)'
-                        }}
-                    >
-                        <CircularProgress size={16} />
-                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                            Güncelleniyor...
-                        </Typography>
-                    </Paper>
-                )}
-
                 <Paper
                     elevation={3}
                     sx={{
@@ -323,6 +305,7 @@ const MapComponent = ({
                         key="main-map"
                         center={mapCenter}
                         zoom={defaultZoom}
+                        zoomControl={false}
                         style={{ height: '100%', width: '100%', zIndex: 1, minHeight: '500px', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
                         scrollWheelZoom={true}
                         whenReady={(mapInstance) => {
