@@ -65,4 +65,33 @@ const adminOnly = (req, res, next) => {
   }
 };
 
-module.exports = { protect, adminOnly, protectOrMeshUplink };
+// Device-token auth for hardware-originated requests (gateway heartbeats,
+// firmware updates, etc). The shared secret is provisioned out-of-band into
+// each device. Compared with JWT this is simpler and survives the device
+// having no user identity.
+//
+// SECURITY: this is shared-secret bearer auth. Rotate via env when a device
+// is decommissioned. If the env var is unset we fail open in dev only —
+// production must set GATEWAY_HEARTBEAT_TOKEN.
+const requireDeviceToken = (req, res, next) => {
+  const expected = process.env.GATEWAY_HEARTBEAT_TOKEN;
+  if (!expected) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[auth] GATEWAY_HEARTBEAT_TOKEN unset in production — refusing.');
+      return res.status(503).json({ message: 'Heartbeat servisi yapılandırılmadı.' });
+    }
+    // dev mode: warn once and pass through
+    if (!requireDeviceToken._warned) {
+      console.warn('[auth] GATEWAY_HEARTBEAT_TOKEN unset — heartbeat endpoint open (dev mode).');
+      requireDeviceToken._warned = true;
+    }
+    return next();
+  }
+  const got = req.headers['x-device-token'];
+  if (!got || got !== expected) {
+    return res.status(401).json({ message: 'Geçersiz cihaz tokeni.' });
+  }
+  next();
+};
+
+module.exports = { protect, adminOnly, protectOrMeshUplink, requireDeviceToken };
