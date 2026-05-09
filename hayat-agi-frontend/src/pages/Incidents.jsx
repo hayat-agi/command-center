@@ -891,28 +891,24 @@ const Incidents = () => {
         />
       </Box>
 
-      {/* Floating top header — sits to the right of the list panel so the
-          two pieces don't visually overlap. */}
+      {/* Floating top-right toolbar — auto-width pill so it doesn't waste
+          horizontal real estate when there's little to show. */}
       <Paper
         elevation={3}
         sx={{
           position: 'absolute',
           top: 12,
-          left: { xs: 12, sm: showListPanel ? 364 : 12, md: showListPanel ? 384 : 12 },
           right: 12,
           zIndex: 4,
-          py: 0.75,
-          px: 1.5,
-          borderRadius: 2,
+          py: 0.5,
+          px: 1,
+          borderRadius: 999,
           bgcolor: alpha(theme.palette.background.paper, 0.96),
           backdropFilter: 'blur(8px)',
-          transition: 'left 0.2s',
         }}
       >
-        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={1} alignItems="center">
           <CompactStatsStrip incidents={incidents} />
-
-          <Box sx={{ flex: 1 }} />
 
           {lastUpdate && (
             <Tooltip title={`Son güncelleme: ${dayjs(lastUpdate).format('HH:mm:ss')}`}>
@@ -946,15 +942,17 @@ const Incidents = () => {
         </MuiAlert>
       )}
 
-      {/* Network coverage callout — bottom-left overlay on the map */}
+      {/* Network coverage callout — bottom edge, offset past the list panel
+          so it never sits underneath. */}
       {clusters.length > 0 && (
         <Paper
           elevation={2}
           sx={{
             position: 'absolute',
             bottom: 12,
-            left: 12,
+            left: { xs: 12, sm: showListPanel ? 364 : 12, md: showListPanel ? 384 : 12 },
             zIndex: 2,
+            transition: 'left 0.2s',
             px: 1.25,
             py: 0.75,
             borderRadius: 1.5,
