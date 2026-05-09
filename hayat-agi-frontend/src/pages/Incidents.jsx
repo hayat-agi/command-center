@@ -64,6 +64,11 @@ import MapComponent from '../components/MapComponent';
 import SourceBadge from '../components/SourceBadge';
 import { getIncidents, getIncidentMessages, closeIncident } from '../services/incidentService';
 import { getGateways } from '../api/gatewayService';
+import {
+  DEFAULT_COVERAGE_M,
+  computeClusters,
+  computeMeshLines,
+} from '../utils/meshTopology';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/tr';
@@ -93,33 +98,11 @@ const URGENCY_LABELS = {
 
 const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
-// Realistic radio coverage per gateway. ESP32 BLE: ~100m practical;
-// ESP32 + LoRa long-range: 500m-5km depending on terrain. We use 500m as
-// the operational default — overrideable per-gateway later via a
-// `coverageRadiusM` field on the Gateway model.
-const DEFAULT_COVERAGE_M = 500;
-
-// Two gateways are "connected" if their coverage circles overlap, i.e.
-// their centers are within 2 × coverage of each other.
-const connectionRadiusM = (cov) => 2 * cov;
-
 const GATEWAY_INACTIVE_COLOR = '#9e9e9e';
 const GATEWAY_ISOLATED_COLOR = '#ef6c00';
 
 // Distinct cluster colors. First color is reserved for "connected".
 const CLUSTER_PALETTE = ['#1976d2', '#388e3c', '#7b1fa2', '#0097a7', '#c2185b', '#5d4037', '#455a64', '#f9a825'];
-
-const haversineM = (a, b) => {
-  if (!a || !b || a.lat == null || b.lat == null) return Infinity;
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const x = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-  return 2 * R * Math.asin(Math.sqrt(x));
-};
 
 const findGatewayForIncident = (incident, gateways) => {
   if (!incident || !gateways || gateways.length === 0) return null;
@@ -134,68 +117,19 @@ const findGatewayForIncident = (incident, gateways) => {
   return null;
 };
 
-// BFS-based connected-component analysis. Two active gateways are in the
-// same component if a chain of pairwise overlaps connects them. Inactive
-// gateways are excluded entirely (they can't relay anything).
-const computeClusters = (gateways, coverageM = DEFAULT_COVERAGE_M) => {
-  const reach = connectionRadiusM(coverageM);
-  const valid = gateways.filter(
-    (g) => g.location?.lat != null && g.location?.lng != null && g.status !== 'inactive'
-  );
-  const visited = new Set();
-  const clusters = [];
-  for (const g of valid) {
-    if (visited.has(g._id)) continue;
-    const cluster = [];
-    const queue = [g];
-    while (queue.length) {
-      const cur = queue.shift();
-      if (visited.has(cur._id)) continue;
-      visited.add(cur._id);
-      cluster.push(cur);
-      for (const other of valid) {
-        if (visited.has(other._id)) continue;
-        if (haversineM(cur.location, other.location) <= reach) queue.push(other);
-      }
-    }
-    clusters.push(cluster);
-  }
-  return clusters;
-};
-
 // Color a gateway based on its cluster membership.
 const colorForCluster = (clusterIdx, clusterSize) => {
   if (clusterSize <= 1) return GATEWAY_ISOLATED_COLOR; // singleton — needs a relay
   return CLUSTER_PALETTE[clusterIdx % CLUSTER_PALETTE.length];
 };
 
-// All intra-cluster connection lines (overlapping coverage). De-duplicated.
-const computeMeshLines = (clusters, coverageM = DEFAULT_COVERAGE_M) => {
-  const reach = connectionRadiusM(coverageM);
-  const lines = [];
-  const seen = new Set();
-  clusters.forEach((cluster, idx) => {
-    if (cluster.length < 2) return;
-    const color = CLUSTER_PALETTE[idx % CLUSTER_PALETTE.length];
-    for (const a of cluster) {
-      for (const b of cluster) {
-        if (a._id === b._id) continue;
-        const key = [a._id, b._id].sort().join('|');
-        if (seen.has(key)) continue;
-        if (haversineM(a.location, b.location) > reach) continue;
-        seen.add(key);
-        lines.push({
-          from: [a.location.lat, a.location.lng],
-          to: [b.location.lat, b.location.lng],
-          color,
-          weight: 2,
-          opacity: 0.7,
-        });
-      }
-    }
-  });
-  return lines;
-};
+// Decorate the shared computeMeshLines output with this page's cluster
+// colors so each connected component gets its own line color.
+const colorMeshLines = (clusters, coverageM) =>
+  computeMeshLines(clusters, coverageM).map((line) => ({
+    ...line,
+    color: CLUSTER_PALETTE[line.clusterIdx % CLUSTER_PALETTE.length],
+  }));
 
 const CATEGORY_LABELS = {
   MEDICAL_RESCUE: 'Tıbbi Kurtarma',
@@ -843,7 +777,7 @@ const Incidents = () => {
     [gateways, gatewayMeta]
   );
 
-  const meshLines = useMemo(() => computeMeshLines(clusters, DEFAULT_COVERAGE_M), [clusters]);
+  const meshLines = useMemo(() => colorMeshLines(clusters, DEFAULT_COVERAGE_M), [clusters]);
 
   // Source-link: line from incident's source gateway to the incident centroid
   const sourceLink = useMemo(() => {
