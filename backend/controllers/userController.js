@@ -1,6 +1,19 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
+const { GENDER_LABELS } = require('../utils/constants');
+
+function normalizeGender(value) {
+  if (!value) return value;
+  if (Object.prototype.hasOwnProperty.call(GENDER_LABELS, value)) return value;
+
+  const normalized = String(value).trim().toLocaleLowerCase('tr-TR');
+  const entry = Object.entries(GENDER_LABELS).find(([, label]) =>
+    String(label).trim().toLocaleLowerCase('tr-TR') === normalized
+  );
+
+  return entry ? entry[0] : value;
+}
 
 // POST /api/users/register
 async function register(req, res, next) {
@@ -94,7 +107,9 @@ async function updateProfile(req, res, next) {
 
     allowedUpdates.forEach((field) => {
       if (req.body[field] !== undefined) {
-        user[field] = req.body[field];
+        user[field] = field === 'gender'
+          ? normalizeGender(req.body[field])
+          : req.body[field];
       }
     });
 
