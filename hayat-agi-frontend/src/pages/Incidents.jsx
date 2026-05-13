@@ -99,6 +99,12 @@ const URGENCY_LABELS = {
 
 const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
+// Visual-only coverage radius used when drawing the on-map circles. The
+// actual mesh-reach math (clusters, mesh lines) still uses DEFAULT_COVERAGE_M
+// (the realistic 350m number) — this is purely so the painted circles don't
+// dominate the map at campus zoom and the hop animation reads cleanly.
+const COVERAGE_DISPLAY_M = 120;
+
 const GATEWAY_INACTIVE_COLOR = '#9e9e9e';
 const GATEWAY_ISOLATED_COLOR = '#ef6c00';
 
@@ -788,7 +794,7 @@ const Incidents = () => {
           return {
             lat: g.location.lat,
             lng: g.location.lng,
-            radiusMeters: DEFAULT_COVERAGE_M,
+            radiusMeters: COVERAGE_DISPLAY_M,
             color: meta?.color || GATEWAY_ISOLATED_COLOR,
             fillOpacity: meta?.isIsolated ? 0.12 : 0.08,
             opacity: 0.55,
