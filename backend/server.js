@@ -21,12 +21,23 @@ const app = express();
 // MongoDB bağlantısını başlat
 connectDB();
 
-// CORS ayarları — origin from env so docker / prod can override
+// CORS ayarları — FRONTEND_URL accepts a comma-separated list so both local
+// dev and the public domain can call the API from the browser.
+// Example: FRONTEND_URL=http://localhost:5173,https://hayatagi.duckdns.org
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: ${origin} not allowed`));
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Token', 'X-Source', 'X-Mesh-Hops', 'X-Mesh-MsgId']
 }));
 
 app.use(express.json());
