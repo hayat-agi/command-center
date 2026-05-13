@@ -152,40 +152,6 @@ const CATEGORY_LABELS = {
   GENERAL: 'Genel',
 };
 
-// Human-friendly Turkish labels for the team codes the fusion service
-// hands back. Keys are the backend identifiers; values are what the
-// operator sees in the dispatched-teams strip.
-const TEAM_LABELS = {
-  AFAD_USAR: 'AFAD Arama-Kurtarma',
-  AMBULANS_112: 'Ambulans (112)',
-  ITFAIYE: 'İtfaiye',
-  POLIS: 'Polis',
-  KIZILAY: 'Kızılay',
-};
-
-const STATUS_LABELS = {
-  active: 'Aktif',
-  inactive: 'Pasif',
-  low_battery: 'Düşük Pil',
-};
-
-const SIGNAL_LABELS = {
-  strong: 'Güçlü',
-  moderate: 'Orta',
-  weak: 'Zayıf',
-};
-
-// Backend's `reason` strings come back like "MEDICAL_RESCUE icin" — bare
-// category code + ASCII "icin". Translate to "Tıbbi Kurtarma için" so a
-// non-tech viewer doesn't see SCREAMING_SNAKE_CASE.
-const friendlyReason = (raw) => {
-  if (!raw || typeof raw !== 'string') return raw;
-  const m = raw.match(/^([A-Z_]+)\s+icin$/);
-  if (!m) return raw;
-  const cat = m[1];
-  return `${CATEGORY_LABELS[cat] || cat} için`;
-};
-
 const CATEGORY_ICONS = {
   MEDICAL_RESCUE: LocalHospitalIcon,
   FIRE: LocalFireDepartmentIcon,
@@ -602,7 +568,7 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
           MESAJ DAĞILIMI ({incident.n_messages} toplam)
         </Typography>
         <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-          <Chip label={`${incident.n_self_reports} kendi raporu`} size="small" variant="outlined" />
+          <Chip label={`${incident.n_self_reports} self`} size="small" variant="outlined" />
           <Chip label={`${incident.n_witness_reports} tanık`} size="small" variant="outlined" />
           <Chip label={`${incident.n_info} bilgi`} size="small" variant="outlined" />
         </Stack>
@@ -616,11 +582,9 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
               {incident.dispatched_teams.map((t, idx) => (
                 <Stack key={`${t.team_code}-${idx}`} direction="row" alignItems="center" spacing={1}>
                   <Chip label={`P${t.priority ?? idx + 1}`} size="small" color="primary" sx={{ minWidth: 36, height: 22 }} />
-                  <Typography variant="body2" fontWeight={500}>
-                    {TEAM_LABELS[t.team_code] || t.team_code}
-                  </Typography>
+                  <Typography variant="body2" fontWeight={500}>{t.team_code}</Typography>
                   {t.reason && (
-                    <Typography variant="caption" color="text.secondary">— {friendlyReason(t.reason)}</Typography>
+                    <Typography variant="caption" color="text.secondary">— {t.reason}</Typography>
                   )}
                 </Stack>
               ))}
@@ -633,7 +597,7 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
         {sourceGateway && (
           <>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-              KAYNAK CİHAZ
+              KAYNAK GATEWAY
             </Typography>
             <Card variant="outlined" sx={{ mb: 2, bgcolor: alpha(color, 0.06), borderColor: alpha(color, 0.4) }}>
               <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
@@ -652,13 +616,13 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
                 </Stack>
                 <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap' }}>
                   <Typography variant="caption" color="text.secondary">
-                    Durum: <strong>{STATUS_LABELS[sourceGateway.status] || sourceGateway.status}</strong>
+                    Durum: <strong>{sourceGateway.status}</strong>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     Pil: <strong>%{sourceGateway.battery ?? '?'}</strong>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Sinyal: <strong>{SIGNAL_LABELS[sourceGateway.signal_quality] || sourceGateway.signal_quality || '?'}</strong>
+                    Sinyal: <strong>{sourceGateway.signal_quality || '?'}</strong>
                   </Typography>
                 </Stack>
               </CardContent>
@@ -812,8 +776,8 @@ const Incidents = () => {
             fillOpacity: g.status === 'inactive' ? 0.25 : 0.7,
             label: g.name || g.serialNumber || 'Gateway',
             subtitle: meta?.isIsolated
-              ? `İZOLE — Pil: %${g.battery ?? '?'} · Sinyal: ${SIGNAL_LABELS[g.signal_quality] || g.signal_quality || '?'}`
-              : `Durum: ${STATUS_LABELS[g.status] || g.status} · Pil: %${g.battery ?? '?'} · Sinyal: ${SIGNAL_LABELS[g.signal_quality] || g.signal_quality || '?'}`,
+              ? `İZOLE — Pil: %${g.battery ?? '?'} · Sinyal: ${g.signal_quality}`
+              : `Durum: ${g.status} · Pil: %${g.battery ?? '?'} · Sinyal: ${g.signal_quality}`,
             highlighted: sourceGateway && sourceGateway._id === g._id,
           };
         }),
