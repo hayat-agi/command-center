@@ -9,7 +9,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 //   unknown → null (don't render — keeps legacy/demo data uncluttered)
 //
 // Detail diagnostics (src addr, msg id) live in the tooltip.
-const SourceBadge = ({ source, hops, srcAddr, msgId, size = 'small' }) => {
+const SourceBadge = ({ source, hops, srcAddr, msgId, size = 'small', onClick }) => {
   if (!source || source === 'unknown') return null;
 
   const isMesh = source === 'mesh';
@@ -18,30 +18,30 @@ const SourceBadge = ({ source, hops, srcAddr, msgId, size = 'small' }) => {
   // → destination only) it's always 0, so showing "0h" is meaningless noise.
   // Only surface a hop suffix when relays actually forwarded (hops >= 1).
   const label = isMesh
-    ? `Mesh${Number.isFinite(hops) && hops >= 1 ? ` · ${hops} hop` : ''}`
+    ? `Mesh${Number.isFinite(hops) && hops >= 1 ? ` · ${hops} sıçrama` : ''}`
     : 'Direkt';
 
   const tooltip = (
     <Stack spacing={0.25} sx={{ p: 0.5 }}>
       <Typography variant="caption" sx={{ fontWeight: 700 }}>
-        {isMesh ? 'LoRa mesh uplink' : 'Doğrudan HTTPS (mesh atlandı)'}
+        {isMesh ? 'LoRa mesh aktarımı' : 'Doğrudan HTTPS (mesh atlandı)'}
       </Typography>
       {isMesh && Number.isFinite(hops) && (
-        <Typography variant="caption">Hop sayısı: <strong>{hops}</strong></Typography>
+        <Typography variant="caption">Sıçrama sayısı: <strong>{hops}</strong></Typography>
       )}
       {srcAddr && (
         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-          src: {srcAddr}
+          kaynak: {srcAddr}
         </Typography>
       )}
       {msgId && (
         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-          msg_id: {msgId}
+          mesaj_kimliği: {msgId}
         </Typography>
       )}
       {!isMesh && (
         <Typography variant="caption" color="warning.light">
-          Mesh ağı yerine telefon doğrudan backend'e POST etti.
+          Mesh ağı yerine telefon doğrudan sunucuya iletti.
         </Typography>
       )}
     </Stack>
@@ -55,11 +55,18 @@ const SourceBadge = ({ source, hops, srcAddr, msgId, size = 'small' }) => {
         size={size}
         variant="outlined"
         color={isMesh ? 'info' : 'warning'}
+        onClick={onClick}
+        clickable={!!onClick}
         sx={{
           height: size === 'small' ? 20 : 24,
           fontSize: size === 'small' ? '0.68rem' : '0.75rem',
           fontWeight: 600,
           '& .MuiChip-icon': { ml: 0.5 },
+          ...(onClick && {
+            cursor: 'pointer',
+            transition: 'transform 120ms, box-shadow 120ms',
+            '&:hover': { transform: 'scale(1.05)', boxShadow: 1 },
+          }),
         }}
       />
     </Tooltip>
