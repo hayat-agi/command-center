@@ -5,6 +5,22 @@ const { getCoordsFromAddress } = require('../utils/geocoder');
 
 const isMongoDBConnected = () => mongoose.connection.readyState === 1;
 
+const buildGatewayIdentityLookup = (id, baseFilter = {}) => {
+  const lookup = { ...baseFilter };
+
+  if (mongoose.isValidObjectId(id)) {
+    lookup.$or = [{ _id: id }, { serialNumber: id }];
+  } else {
+    lookup.serialNumber = id;
+  }
+
+  return lookup;
+};
+
+const findGatewayByIdentity = (id, baseFilter = {}) => (
+  Gateway.findOne(buildGatewayIdentityLookup(id, baseFilter))
+);
+
 // Get All Gateways
 exports.getGateways = async (req, res) => {
   try {
@@ -37,6 +53,15 @@ exports.getUserGateways = async (req, res) => {
 exports.createGateway = async (req, res) => {
   try {
     const { name, serialNumber } = req.body;
+    const rawLatitude = req.body.latitude;
+    const rawLongitude = req.body.longitude;
+    const explicitLatitude = rawLatitude === undefined || rawLatitude === null || rawLatitude === ''
+      ? null
+      : Number(rawLatitude);
+    const explicitLongitude = rawLongitude === undefined || rawLongitude === null || rawLongitude === ''
+      ? null
+      : Number(rawLongitude);
+    const hasExplicitCoords = Number.isFinite(explicitLatitude) && Number.isFinite(explicitLongitude);
 
     // Accept either nested `address: {...}` or flat top-level fields
     // (the Flutter mobile client sends flat `street`, `district`, `city`,
@@ -87,14 +112,18 @@ exports.createGateway = async (req, res) => {
     ].map((parts) => parts.filter(Boolean).join(', '))
      .filter((q) => q && q !== 'Türkiye');
 
-    let coords = null;
-    let geocodedBy = null;
-    for (const q of queryLevels) {
-      console.log('📍 Konum aranıyor:', q);
-      coords = await getCoordsFromAddress(q);
-      if (coords) {
-        geocodedBy = q;
-        break;
+    let coords = hasExplicitCoords
+      ? { lat: explicitLatitude, lng: explicitLongitude }
+      : null;
+    let geocodedBy = hasExplicitCoords ? 'client coordinates' : null;
+    if (!coords) {
+      for (const q of queryLevels) {
+        console.log('📍 Konum aranıyor:', q);
+        coords = await getCoordsFromAddress(q);
+        if (coords) {
+          geocodedBy = q;
+          break;
+        }
       }
     }
 
@@ -170,9 +199,7 @@ exports.deleteGateway = async (req, res) => {
     // Accept both Mongo ObjectId and serialNumber (BLE MAC) as :id — mobile
     // clients pass the BLE MAC which is stored as serialNumber, not _id.
     const ownerFilter = req.user?.role === 'admin' ? {} : { owner: req.user._id };
-    const lookup = mongoose.isValidObjectId(id)
-      ? { ...ownerFilter, $or: [{ _id: id }, { serialNumber: id }] }
-      : { ...ownerFilter, serialNumber: id };
+    const lookup = buildGatewayIdentityLookup(id, ownerFilter);
 
     const gateway = await Gateway.findOneAndDelete(lookup);
 
@@ -272,16 +299,9 @@ exports.updateGateway = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, address, deviceCount, latitude, longitude, locationAddress } = req.body || {};
+    const { name, address, deviceCount, latitude, longitude, locationAddress, serialNumber } = req.body || {};
 
-    const lookup = { owner: req.user._id };
-    if (mongoose.isValidObjectId(id)) {
-      lookup.$or = [{ _id: id }, { serialNumber: id }];
-    } else {
-      lookup.serialNumber = id;
-    }
-
-    const gateway = await Gateway.findOne(lookup);
+    const gateway = await findGatewayByIdentity(id, { owner: req.user._id });
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya güncelleme yetkiniz yok.' });
@@ -289,6 +309,10 @@ exports.updateGateway = async (req, res) => {
 
 
     if (name) gateway.name = name;
+
+    if (typeof serialNumber === 'string' && serialNumber.trim()) {
+      gateway.serialNumber = serialNumber.trim();
+    }
 
     if (deviceCount !== undefined) {
       gateway.connected_devices = deviceCount;
@@ -337,6 +361,11 @@ exports.updateGateway = async (req, res) => {
 
   } catch (error) {
     console.error('Update gateway error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: 'Bu seri numarasına sahip bir cihaz zaten mevcut.'
+      });
+    }
     res.status(500).json({ message: 'Güncelleme sırasında sunucu hatası oluştu.' });
   }
 };
@@ -351,7 +380,7 @@ exports.listGatewayAlerts = async (req, res) => {
     const { id } = req.params;
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
-    const gateway = await Gateway.findOne({ _id: id, owner: req.user._id }).select('_id');
+    const gateway = await findGatewayByIdentity(id, { owner: req.user._id }).select('_id');
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
     }
@@ -373,7 +402,7 @@ exports.addPersonToGateway = async (req, res) => {
     const personData = req.body; // Formdan gelen kişi bilgileri
 
     // 1. Gateway'i bul (Sadece kendi cihazına ekleyebilsin diye owner kontrolü şart)
-    const gateway = await Gateway.findOne({ _id: id, owner: req.user._id });
+    const gateway = await findGatewayByIdentity(id, { owner: req.user._id });
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
@@ -401,7 +430,7 @@ exports.removePersonFromGateway = async (req, res) => {
   try {
     const { gatewayId, personId } = req.params;
 
-    const gateway = await Gateway.findOne({ _id: gatewayId, owner: req.user._id });
+    const gateway = await findGatewayByIdentity(gatewayId, { owner: req.user._id });
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı.' });
@@ -425,7 +454,7 @@ exports.addPetToGateway = async (req, res) => {
     const { id } = req.params;
     const petData = req.body;
 
-    const gateway = await Gateway.findOne({ _id: id, owner: req.user._id });
+    const gateway = await findGatewayByIdentity(id, { owner: req.user._id });
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı.' });
@@ -463,14 +492,8 @@ exports.addDisasterEvent = async (req, res) => {
     // Try ObjectId first, fall back to serialNumber lookup. Mesh-uplink
     // requests have req.user === null (no JWT) — drop the owner constraint,
     // gateway identity is established by the :id param alone.
-    const mongoose = require('mongoose');
     const lookup = req.user ? { owner: req.user._id } : {};
-    if (mongoose.isValidObjectId(id)) {
-      lookup.$or = [{ _id: id }, { serialNumber: id }];
-    } else {
-      lookup.serialNumber = id;
-    }
-    const gateway = await Gateway.findOne(lookup);
+    const gateway = await findGatewayByIdentity(id, lookup);
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
     }
@@ -547,7 +570,7 @@ exports.removePetFromGateway = async (req, res) => {
   try {
     const { gatewayId, petId } = req.params;
 
-    const gateway = await Gateway.findOne({ _id: gatewayId, owner: req.user._id });
+    const gateway = await findGatewayByIdentity(gatewayId, { owner: req.user._id });
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı.' });
