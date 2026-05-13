@@ -69,6 +69,7 @@ import {
   computeClusters,
   computeMeshLines,
 } from '../utils/meshTopology';
+import { synthesizeHopPath } from '../utils/synthesizeHopPath';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/tr';
@@ -360,7 +361,7 @@ const IncidentCard = ({ incident, isSelected, onClick }) => {
   );
 };
 
-const IncidentMessages = ({ incidentId, color }) => {
+const IncidentMessages = ({ incidentId, color, onMessageClick }) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -403,7 +404,10 @@ const IncidentMessages = ({ incidentId, color }) => {
         <Card
           key={m.id}
           variant="outlined"
-          sx={{ borderLeft: `3px solid ${color}`, bgcolor: alpha(color, 0.03) }}
+          sx={{
+            borderLeft: `3px solid ${color}`,
+            bgcolor: alpha(color, 0.03),
+          }}
         >
           <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
             <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.75, lineHeight: 1.4 }}>
@@ -426,6 +430,7 @@ const IncidentMessages = ({ incidentId, color }) => {
                 hops={m.meshHops}
                 srcAddr={m.meshSrcAddr}
                 msgId={m.meshMsgId}
+                onClick={onMessageClick ? () => onMessageClick(m) : undefined}
               />
               <Box sx={{ flex: 1 }} />
               {m.type && m.type !== 'manual_message' && (
@@ -442,7 +447,7 @@ const IncidentMessages = ({ incidentId, color }) => {
   );
 };
 
-const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
+const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageClick }) => {
   const color = URGENCY_COLORS[incident.max_urgency] || '#9e9e9e';
   const [closeOpen, setCloseOpen] = useState(false);
   const [falseAlarm, setFalseAlarm] = useState(false);
@@ -536,9 +541,21 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed }) => {
           <Typography variant="caption" color="text.secondary">
             ORİJİNAL MESAJLAR ({incident.n_messages})
           </Typography>
+          {onMessageClick && (
+            <Typography
+              variant="caption"
+              sx={{ color, fontWeight: 600, ml: 'auto' }}
+            >
+              "Mesh · sıçrama" rozetine tıkla → yolu izle
+            </Typography>
+          )}
         </Stack>
         <Box sx={{ mb: 2 }}>
-          <IncidentMessages incidentId={incident.id} color={color} />
+          <IncidentMessages
+            incidentId={incident.id}
+            color={color}
+            onMessageClick={onMessageClick}
+          />
         </Box>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
@@ -656,6 +673,9 @@ const Incidents = () => {
   // Per-tier collapse state. CRITICAL/HIGH default open, MEDIUM/LOW collapsed
   // when there are many incidents to keep the panel scannable.
   const [collapsedTiers, setCollapsedTiers] = useState({ MEDIUM: false, LOW: false, OTHER: true });
+  // Mesh-hop animation state. `key` doubles as the React key so bumping it
+  // re-triggers the rAF loop inside MeshHopAnimation.
+  const [hopAnimation, setHopAnimation] = useState(null);
 
   const loadIncidents = useCallback(async (isInitial = false) => {
     try {
@@ -804,8 +824,34 @@ const Incidents = () => {
 
   const handleSelect = (id) => {
     setSelectedId(id);
+    setHopAnimation(null);
     if (isMobile) setListOpen(false);
   };
+
+  // Triggered when the operator clicks the "Mesh · N sıçrama" badge in the
+  // message detail panel. Synthesizes the hop chain from the source gateway's
+  // cluster and kicks off the MeshHopAnimation overlay for ~5s. Map zoom/
+  // pan is intentionally untouched so the operator's framing survives the
+  // animation playback.
+  const handleMessageClick = useCallback(
+    (message) => {
+      if (!sourceGateway || !selectedIncident) return;
+      const path = synthesizeHopPath({
+        sourceGateway,
+        gateways,
+        meshHops: message?.meshHops ?? 1,
+        clusters,
+      });
+      if (!path || path.length < 2) return;
+      setHopAnimation({
+        path,
+        color: URGENCY_COLORS[selectedIncident.max_urgency] || '#1976d2',
+        durationMs: 5000,
+        animationKey: Date.now(),
+      });
+    },
+    [sourceGateway, selectedIncident, gateways, clusters]
+  );
 
   return (
     <Box sx={{ position: 'relative', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
@@ -813,7 +859,9 @@ const Incidents = () => {
       <Box sx={{ position: 'absolute', inset: 0, zIndex: 0 }}>
         <MapComponent
           gateways={mapItems}
-          selectedGateway={selectedIncident ? incidentToGatewayShape(selectedIncident) : null}
+          /* selectedGateway intentionally NOT passed — selection would
+             otherwise auto-pan + auto-zoom the map (MapUpdater), undoing
+             whatever framing the operator has set up for the demo shot. */
           onMarkerClick={(item) => handleSelect(item._id)}
           loading={loading}
           error={null}
@@ -822,6 +870,7 @@ const Incidents = () => {
           extraMarkers={extraMarkers}
           lines={allLines}
           coverageCircles={coverageCircles}
+          hopAnimation={hopAnimation}
         />
       </Box>
 
@@ -1091,6 +1140,7 @@ const Incidents = () => {
               setSelectedId(null);
               loadIncidents(false);
             }}
+            onMessageClick={handleMessageClick}
           />
         </Paper>
       )}
