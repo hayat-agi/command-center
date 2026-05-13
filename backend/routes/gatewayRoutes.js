@@ -11,6 +11,7 @@ router.get('/user', protect, gatewayController.getUserGateways);
 router.post('/heartbeat', requireDeviceToken, gatewayController.heartbeat);
 
 router.put('/:id', protect, gatewayController.updateGateway);
+router.patch('/:id', protect, gatewayController.updateGateway);
 
 router.post('/', protect, gatewayController.createGateway);
 

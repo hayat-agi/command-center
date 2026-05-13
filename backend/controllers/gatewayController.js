@@ -261,7 +261,7 @@ exports.heartbeat = async (req, res) => {
   }
 };
 
-// PUT /gateways/:id
+// PUT/PATCH /gateways/:id
 exports.updateGateway = async (req, res) => {
   try {
     if (!isMongoDBConnected()) {
@@ -269,10 +269,16 @@ exports.updateGateway = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, address } = req.body;
+    const { name, address, deviceCount, latitude, longitude, locationAddress } = req.body || {};
 
+    const lookup = { owner: req.user._id };
+    if (mongoose.isValidObjectId(id)) {
+      lookup.$or = [{ _id: id }, { serialNumber: id }];
+    } else {
+      lookup.serialNumber = id;
+    }
 
-    const gateway = await Gateway.findOne({ _id: id, owner: req.user._id });
+    const gateway = await Gateway.findOne(lookup);
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya güncelleme yetkiniz yok.' });
@@ -281,15 +287,35 @@ exports.updateGateway = async (req, res) => {
 
     if (name) gateway.name = name;
 
+    if (deviceCount !== undefined) {
+      gateway.connected_devices = deviceCount;
+    }
+
+    if (latitude !== undefined || longitude !== undefined) {
+      gateway.location = {
+        lat: latitude !== undefined ? latitude : gateway.location.lat,
+        lng: longitude !== undefined ? longitude : gateway.location.lng,
+      };
+    }
 
     if (address) {
       gateway.address = {
-        city: address.city || gateway.address.city,
+        ...gateway.address.toObject(),
+        province: address.province || address.city || gateway.address.province,
         district: address.district || gateway.address.district,
         street: address.street || gateway.address.street,
         buildingNo: address.buildingNo || gateway.address.buildingNo,
+        doorNo: address.doorNo || address.doorNumber || gateway.address.doorNo,
+        neighborhood: address.neighborhood || gateway.address.neighborhood,
+        postalCode: address.postalCode || gateway.address.postalCode,
       };
       const coords = await getCoordsFromAddress(address);
+
+      if (coords) {
+        gateway.location = coords;
+      }
+    } else if (locationAddress && latitude === undefined && longitude === undefined) {
+      const coords = await getCoordsFromAddress(locationAddress);
 
       if (coords) {
         gateway.location = coords;
