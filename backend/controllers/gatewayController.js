@@ -73,22 +73,16 @@ exports.createGateway = async (req, res) => {
     const district = trim(address.district);
     const province = trim(address.province);
 
-    // Structured query first (street + neighborhood + district + province),
-    // then progressively drop precision. The "{street}, {province}" landmark
-    // search is kept as a late fallback for POIs like "Çankaya Üniversitesi"
-    // typed into the street field, but it must run AFTER the structured
-    // queries — otherwise common street names (e.g. "Mimar Sinan Caddesi",
-    // present in many Ankara districts) silently resolve to the wrong side
-    // of the city. Observed in prod: an Etimesgut address landed in
-    // Pursaklar because the POI query was tried first and Nominatim returned
-    // the Pursaklar Mimar Sinan Caddesi verbatim.
+    // Structured queries run before the bare-street POI fallback so a common
+    // street name doesn't pin the gateway in the wrong district of the same
+    // province.
     const street = trim(address.street);
     const queryLevels = [
-      [streetFull, neighborhood, district, province, 'Türkiye'],     // structured full
-      [street, neighborhood, district, province, 'Türkiye'],         // street + context (no building)
+      [streetFull, neighborhood, district, province, 'Türkiye'],
+      [street, neighborhood, district, province, 'Türkiye'],
       [neighborhood, district, province, 'Türkiye'],
       [district, province, 'Türkiye'],
-      [street, province, 'Türkiye'],                                 // POI / landmark fallback
+      [street, province, 'Türkiye'],
       [province, 'Türkiye'],
     ].map((parts) => parts.filter(Boolean).join(', '))
      .filter((q) => q && q !== 'Türkiye');
