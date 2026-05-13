@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, CircleMarker, P
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './MapComponent.css';
+import MeshHopAnimation from './MeshHopAnimation';
 import {
     Box,
     Typography,
@@ -85,10 +86,14 @@ const MapUpdater = ({ center, zoom }) => {
 // coverageCircles: optional radio-coverage Circles (radius in meters).
 //   Drawn under everything else so markers/lines stay readable. Shape:
 //     { lat, lng, radiusMeters, color, fillOpacity? (default 0.08), opacity? (default 0.5) }
+// hopAnimation: optional packet-hop overlay. Shape:
+//   { path: [{lat,lng,name}], color?, durationMs?, animationKey, onComplete? }
+//   Bump `animationKey` to (re)trigger.
 const MapComponent = ({
     gateways = [], selectedGateway, onGatewayClick, onMarkerClick,
     loading, error, isRefreshing = false, colorResolver,
     extraMarkers = [], lines = [], coverageCircles = [],
+    hopAnimation = null,
 }) => {
     // İstanbul merkez koordinatları
     const defaultCenter = [41.0082, 28.9784];
@@ -515,6 +520,18 @@ const MapComponent = ({
                                 </Marker>
                             );
                         })}
+
+                        {/* Mesh hop animation overlay — drawn via portal into
+                            the Leaflet container so it sits above all panes. */}
+                        {hopAnimation?.path && hopAnimation.path.length >= 2 && (
+                            <MeshHopAnimation
+                                path={hopAnimation.path}
+                                color={hopAnimation.color}
+                                durationMs={hopAnimation.durationMs}
+                                animationKey={hopAnimation.animationKey}
+                                onComplete={hopAnimation.onComplete}
+                            />
+                        )}
                     </MapContainer>
                 )}
                 {!isMounted && (
