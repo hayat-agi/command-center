@@ -164,14 +164,17 @@ exports.deleteGateway = async (req, res) => {
       return res.status(503).json({ message: 'Veritabanı bağlantısı yok.' });
     }
 
-    // Admins can delete any gateway (operational override on the
-    // /dashboard/gateways management page); regular users can only delete
-    // gateways they own.
-    const filter = req.user?.role === 'admin'
-      ? { _id: req.params.id }
-      : { _id: req.params.id, owner: req.user._id };
+    const { id } = req.params;
 
-    const gateway = await Gateway.findOneAndDelete(filter);
+    // Admins can delete any gateway; regular users can only delete their own.
+    // Accept both Mongo ObjectId and serialNumber (BLE MAC) as :id — mobile
+    // clients pass the BLE MAC which is stored as serialNumber, not _id.
+    const ownerFilter = req.user?.role === 'admin' ? {} : { owner: req.user._id };
+    const lookup = mongoose.isValidObjectId(id)
+      ? { ...ownerFilter, $or: [{ _id: id }, { serialNumber: id }] }
+      : { ...ownerFilter, serialNumber: id };
+
+    const gateway = await Gateway.findOneAndDelete(lookup);
 
     if (!gateway) {
       return res.status(404).json({
@@ -299,20 +302,24 @@ exports.updateGateway = async (req, res) => {
     }
 
     if (address) {
+      const existing = gateway.address ? gateway.address.toObject() : {};
       gateway.address = {
-        ...gateway.address.toObject(),
-        province: address.province || address.city || gateway.address.province,
-        district: address.district || gateway.address.district,
-        street: address.street || gateway.address.street,
-        buildingNo: address.buildingNo || gateway.address.buildingNo,
-        doorNo: address.doorNo || address.doorNumber || gateway.address.doorNo,
-        neighborhood: address.neighborhood || gateway.address.neighborhood,
-        postalCode: address.postalCode || gateway.address.postalCode,
+        ...existing,
+        province: address.province || address.city || existing.province,
+        district: address.district || existing.district,
+        street: address.street || existing.street,
+        buildingNo: address.buildingNo || existing.buildingNo,
+        doorNo: address.doorNo || address.doorNumber || existing.doorNo,
+        neighborhood: address.neighborhood || existing.neighborhood,
+        postalCode: address.postalCode || existing.postalCode,
       };
-      const coords = await getCoordsFromAddress(address);
-
-      if (coords) {
-        gateway.location = coords;
+      // Only geocode when explicit coordinates were not provided — explicit
+      // lat/lng always wins over a geocoded estimate.
+      if (latitude === undefined && longitude === undefined) {
+        const coords = await getCoordsFromAddress(address);
+        if (coords) {
+          gateway.location = coords;
+        }
       }
     } else if (locationAddress && latitude === undefined && longitude === undefined) {
       const coords = await getCoordsFromAddress(locationAddress);
