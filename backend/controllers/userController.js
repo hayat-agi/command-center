@@ -1,7 +1,10 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const { GENDER_LABELS } = require('../utils/constants');
+
+const isMongoDBConnected = () => mongoose.connection.readyState === 1;
 
 function normalizeGender(value) {
   if (!value) return value;
@@ -23,6 +26,12 @@ async function register(req, res, next) {
 
     if (!name || !surname || !email || !password || !tcNumber) {
       return res.status(400).json({ message: 'Ad, soyad, e-posta, şifre ve TC Kimlik zorunludur' });
+    }
+
+    if (!isMongoDBConnected()) {
+      return res.status(503).json({
+        message: 'Veritabanı bağlantısı yok. Kayıt işlemi şu anda kullanılamıyor.'
+      });
     }
 
     if (password.length < 6) {
@@ -64,6 +73,13 @@ async function register(req, res, next) {
 async function login(req, res, next) {
   try {
     const { email, password } = req.body;
+
+    if (!isMongoDBConnected()) {
+      return res.status(503).json({
+        message: 'Veritabanı bağlantısı yok. Giriş işlemi şu anda kullanılamıyor.'
+      });
+    }
+
     const user = await User.findOne({ email: (email || '').toLowerCase() });
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
     const match = await bcrypt.compare(password, user.password);

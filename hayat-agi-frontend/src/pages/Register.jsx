@@ -105,10 +105,15 @@ const Register = () => {
       // API çağrısı
       const { register } = await import('../services/authService');
       await register(payload);
-      setLoading(false);
       navigate(ROUTES.LOGIN);
     } catch (err) {
-      setError('Kayıt işlemi sırasında bir hata oluştu.');
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        err?.error ||
+        'Kayıt işlemi sırasında bir hata oluştu.';
+      setError(message);
+    } finally {
       setLoading(false);
     }
   };
