@@ -572,6 +572,16 @@ exports.addDisasterEvent = async (req, res) => {
       },
     });
 
+    // Alert ingest is an implicit liveness proof — we just heard from this
+    // device, regardless of whether its periodic /heartbeat is wired up
+    // correctly. Bump last_seen always; flip inactive→active so the
+    // frontend cluster computation includes the gateway. Don't downgrade
+    // from low_battery (battery info comes from /heartbeat, not alerts).
+    const livenessUpdate = { last_seen: new Date() };
+    if (gateway.status === 'inactive') livenessUpdate.status = 'active';
+    Gateway.updateOne({ _id: gateway._id }, { $set: livenessUpdate })
+      .catch((err) => console.warn('[disaster] gateway liveness update failed:', err.message));
+
     res.status(201).json({ message: 'Olay kaydedildi.', alert });
   } catch (error) {
     if (error?.name === 'ValidationError') {
