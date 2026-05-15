@@ -61,15 +61,35 @@ const createCustomIcon = (status, battery, colorOverride) => {
     });
 };
 
-// Harita güncelleme component'i (zoom ve merkez için)
-const MapUpdater = ({ center, zoom }) => {
+// Harita güncelleme component'i (zoom ve merkez için).
+// focusBounds: optional array of [lat, lng] pairs. When provided, the map
+// flies to a frame that contains all those points with a generous padding
+// so the operator gets a subtle nudge toward the relevant cluster instead
+// of a hard auto-zoom. A single-point array falls back to setView at a
+// moderate zoom so we don't snap to maxZoom.
+const MapUpdater = ({ center, zoom, focusBounds }) => {
     const map = useMap();
 
     useEffect(() => {
+        if (Array.isArray(focusBounds) && focusBounds.length > 0) {
+            if (focusBounds.length === 1) {
+                map.setView(focusBounds[0], Math.max(map.getZoom(), 16), {
+                    animate: true,
+                    duration: 0.6,
+                });
+            } else {
+                map.flyToBounds(focusBounds, {
+                    padding: [80, 80],
+                    maxZoom: 16,
+                    duration: 0.6,
+                });
+            }
+            return;
+        }
         if (center) {
             map.setView(center, zoom || map.getZoom());
         }
-    }, [center, zoom, map]);
+    }, [center, zoom, focusBounds, map]);
 
     return null;
 };
@@ -94,6 +114,7 @@ const MapComponent = ({
     loading, error, isRefreshing = false, colorResolver,
     extraMarkers = [], lines = [], coverageCircles = [],
     hopAnimation = null,
+    focusBounds = null,
 }) => {
     // İstanbul merkez koordinatları
     const defaultCenter = [41.0082, 28.9784];
@@ -367,6 +388,14 @@ const MapComponent = ({
                                 center={[selectedGateway.location.lat, selectedGateway.location.lng]}
                                 zoom={15}
                             />
+                        )}
+
+                        {/* Caller-driven cluster framing (Incidents page passes
+                            the bounds of the selected incident's cluster so a
+                            list click subtly pans the map toward the relevant
+                            nodes without yanking the operator's framing). */}
+                        {focusBounds && focusBounds.length > 0 && (
+                            <MapUpdater focusBounds={focusBounds} />
                         )}
 
                         {/* Radio coverage circles — bottom-most layer */}
