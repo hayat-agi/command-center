@@ -115,7 +115,7 @@ const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 // actual mesh-reach math (clusters, mesh lines) still uses DEFAULT_COVERAGE_M
 // (the realistic 350m number) — this is purely so the painted circles don't
 // dominate the map at campus zoom and the hop animation reads cleanly.
-const COVERAGE_DISPLAY_M = 120;
+const COVERAGE_DISPLAY_M = 70;
 
 const GATEWAY_INACTIVE_COLOR = '#9e9e9e';
 const GATEWAY_ISOLATED_COLOR = '#ef6c00';
