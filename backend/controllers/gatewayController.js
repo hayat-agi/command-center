@@ -21,6 +21,15 @@ const findGatewayByIdentity = (id, baseFilter = {}) => (
   Gateway.findOne(buildGatewayIdentityLookup(id, baseFilter))
 );
 
+// Returns the gateway-ownership filter to scope a query to the caller's own
+// gateways, while letting admins and unauthenticated mesh-uplink callers
+// see everything. Mirrors the access model already used in deleteGateway.
+const getOwnerFilter = (req) => {
+  if (!req.user) return {};                    // mesh-uplink: no JWT
+  if (req.user.role === 'admin') return {};    // admins manage any device
+  return { owner: req.user._id };
+};
+
 // Get All Gateways
 exports.getGateways = async (req, res) => {
   try {
@@ -198,8 +207,7 @@ exports.deleteGateway = async (req, res) => {
     // Admins can delete any gateway; regular users can only delete their own.
     // Accept both Mongo ObjectId and serialNumber (BLE MAC) as :id — mobile
     // clients pass the BLE MAC which is stored as serialNumber, not _id.
-    const ownerFilter = req.user?.role === 'admin' ? {} : { owner: req.user._id };
-    const lookup = buildGatewayIdentityLookup(id, ownerFilter);
+    const lookup = buildGatewayIdentityLookup(id, getOwnerFilter(req));
 
     const gateway = await Gateway.findOneAndDelete(lookup);
 
@@ -301,7 +309,7 @@ exports.updateGateway = async (req, res) => {
     const { id } = req.params;
     const { name, address, deviceCount, latitude, longitude, locationAddress, serialNumber } = req.body || {};
 
-    const gateway = await findGatewayByIdentity(id, { owner: req.user._id });
+    const gateway = await findGatewayByIdentity(id, getOwnerFilter(req));
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya güncelleme yetkiniz yok.' });
@@ -380,7 +388,7 @@ exports.listGatewayAlerts = async (req, res) => {
     const { id } = req.params;
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
-    const gateway = await findGatewayByIdentity(id, { owner: req.user._id }).select('_id');
+    const gateway = await findGatewayByIdentity(id, getOwnerFilter(req)).select('_id');
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
     }
@@ -402,7 +410,7 @@ exports.addPersonToGateway = async (req, res) => {
     const personData = req.body; // Formdan gelen kişi bilgileri
 
     // 1. Gateway'i bul (Sadece kendi cihazına ekleyebilsin diye owner kontrolü şart)
-    const gateway = await findGatewayByIdentity(id, { owner: req.user._id });
+    const gateway = await findGatewayByIdentity(id, getOwnerFilter(req));
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
@@ -430,7 +438,7 @@ exports.removePersonFromGateway = async (req, res) => {
   try {
     const { gatewayId, personId } = req.params;
 
-    const gateway = await findGatewayByIdentity(gatewayId, { owner: req.user._id });
+    const gateway = await findGatewayByIdentity(gatewayId, getOwnerFilter(req));
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı.' });
@@ -454,7 +462,7 @@ exports.addPetToGateway = async (req, res) => {
     const { id } = req.params;
     const petData = req.body;
 
-    const gateway = await findGatewayByIdentity(id, { owner: req.user._id });
+    const gateway = await findGatewayByIdentity(id, getOwnerFilter(req));
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı.' });
@@ -490,10 +498,10 @@ exports.addDisasterEvent = async (req, res) => {
 
     // Mobile sends BLE MAC or serialNumber as :id (not the Mongo ObjectId).
     // Try ObjectId first, fall back to serialNumber lookup. Mesh-uplink
-    // requests have req.user === null (no JWT) — drop the owner constraint,
-    // gateway identity is established by the :id param alone.
-    const lookup = req.user ? { owner: req.user._id } : {};
-    const gateway = await findGatewayByIdentity(id, lookup);
+    // requests have req.user === null (no JWT) — getOwnerFilter() drops the
+    // owner constraint for those AND for admins, so gateway identity is
+    // established by the :id param alone in both cases.
+    const gateway = await findGatewayByIdentity(id, getOwnerFilter(req));
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı veya yetkiniz yok.' });
     }
@@ -570,7 +578,7 @@ exports.removePetFromGateway = async (req, res) => {
   try {
     const { gatewayId, petId } = req.params;
 
-    const gateway = await findGatewayByIdentity(gatewayId, { owner: req.user._id });
+    const gateway = await findGatewayByIdentity(gatewayId, getOwnerFilter(req));
 
     if (!gateway) {
       return res.status(404).json({ message: 'Cihaz bulunamadı.' });
