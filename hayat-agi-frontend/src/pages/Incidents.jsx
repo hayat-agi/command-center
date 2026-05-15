@@ -60,6 +60,17 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import RouterIcon from '@mui/icons-material/Router';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import BatteryFullIcon from '@mui/icons-material/BatteryFull';
+import Battery50Icon from '@mui/icons-material/Battery50';
+import Battery20Icon from '@mui/icons-material/Battery20';
+import SignalCellularAltIcon from '@mui/icons-material/SignalCellularAlt';
+import SignalCellularAlt2BarIcon from '@mui/icons-material/SignalCellularAlt2Bar';
+import SignalCellularAlt1BarIcon from '@mui/icons-material/SignalCellularAlt1Bar';
+import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
+import BloodtypeIcon from '@mui/icons-material/Bloodtype';
+import MedicationIcon from '@mui/icons-material/Medication';
+import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import MapComponent from '../components/MapComponent';
 import SourceBadge from '../components/SourceBadge';
 import { getIncidents, getIncidentMessages, closeIncident } from '../services/incidentService';
@@ -401,10 +412,215 @@ const IncidentCard = ({ incident, isSelected, onClick }) => {
   );
 };
 
-const IncidentMessages = ({ incidentId, color, onMessageClick }) => {
+// Compact health-profile strip rendered inline under each message card.
+// Shows non-empty fields only — blood type chip + first 3 condition/med/
+// prosthetic labels with a "+N" overflow indicator. Click the parent card
+// for the full picture in the modal.
+const HealthProfileStrip = ({ health }) => {
+  if (!health) return null;
+  const items = [
+    ...(health.medicalConditions || []),
+    ...(health.medications || []),
+    ...(health.prosthetics || []),
+  ];
+  if (items.length === 0 && !health.bloodType) return null;
+  const visible = items.slice(0, 3);
+  const overflow = items.length - visible.length;
+  return (
+    <Stack
+      direction="row"
+      spacing={0.5}
+      alignItems="center"
+      sx={{ mt: 0.75, flexWrap: 'wrap', rowGap: 0.5 }}
+    >
+      <MedicalServicesIcon sx={{ fontSize: 13, color: 'error.main' }} />
+      {health.bloodType && (
+        <Chip
+          icon={<BloodtypeIcon sx={{ fontSize: 11 }} />}
+          label={health.bloodType}
+          size="small"
+          sx={{ height: 18, fontSize: '0.62rem', '& .MuiChip-icon': { ml: 0.5, mr: -0.25 } }}
+        />
+      )}
+      {visible.map((label) => (
+        <Chip
+          key={label}
+          label={label.length > 22 ? `${label.slice(0, 20)}…` : label}
+          size="small"
+          variant="outlined"
+          sx={{ height: 18, fontSize: '0.62rem' }}
+        />
+      ))}
+      {overflow > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+          +{overflow}
+        </Typography>
+      )}
+    </Stack>
+  );
+};
+
+// Severity-colored chip for the matched risk factors in the detail modal.
+const RiskSeverity = ({ bonus }) => {
+  const tier = bonus >= 0.7 ? { label: 'KRİTİK', color: '#c62828' }
+    : bonus >= 0.5 ? { label: 'YÜKSEK', color: '#e65100' }
+    : bonus >= 0.3 ? { label: 'ORTA', color: '#f57f17' }
+    : { label: 'DÜŞÜK', color: '#1565c0' };
+  return (
+    <Chip
+      label={tier.label}
+      size="small"
+      sx={{
+        height: 18,
+        fontSize: '0.6rem',
+        fontWeight: 700,
+        bgcolor: alpha(tier.color, 0.12),
+        color: tier.color,
+        minWidth: 60,
+      }}
+    />
+  );
+};
+
+// Full health detail dialog opened when an operator clicks a message card.
+// Shows the citizen's complete profile + the matched risk factors against
+// this specific incident's category set, sorted by severity descending so
+// the worst risk lands at the top.
+const MessageDetailModal = ({ open, onClose, message, riskFactors, urgencyColor }) => {
+  if (!message) return null;
+  const health = message.sourceUserHealth;
+  const conditions = health?.medicalConditions || [];
+  const meds = health?.medications || [];
+  const prost = health?.prosthetics || [];
+  const matchedHere = (riskFactors || []).filter((f) =>
+    [...conditions, ...meds, ...prost].includes(f.condition),
+  );
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ pb: 1, borderBottom: `3px solid ${urgencyColor}` }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <MedicalServicesIcon sx={{ color: 'error.main' }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle1" fontWeight={700}>Mağdur Sağlık Profili</Typography>
+            {message.sourceUserName && (
+              <Typography variant="caption" color="text.secondary">
+                {message.sourceUserName}
+              </Typography>
+            )}
+          </Box>
+        </Stack>
+      </DialogTitle>
+      <DialogContent dividers sx={{ pt: 2 }}>
+        <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic', color: 'text.secondary' }}>
+          "{message.text}"
+        </Typography>
+
+        {!health && (
+          <Typography variant="body2" color="text.secondary">
+            Sağlık profili bulunmuyor.
+          </Typography>
+        )}
+
+        {health && (
+          <Stack spacing={1.5}>
+            {health.bloodType && (
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <BloodtypeIcon sx={{ fontSize: 18, color: 'error.main' }} />
+                <Typography variant="body2" fontWeight={600}>Kan grubu:</Typography>
+                <Chip label={health.bloodType} size="small" color="error" variant="outlined" />
+              </Stack>
+            )}
+
+            {conditions.length > 0 && (
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  KRONİK HASTALIKLAR
+                </Typography>
+                <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ rowGap: 0.5 }}>
+                  {conditions.map((c) => (
+                    <Chip key={c} label={c} size="small" />
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            {meds.length > 0 && (
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  <MedicationIcon sx={{ fontSize: 12, mr: 0.5, verticalAlign: 'middle' }} />
+                  KULLANILAN İLAÇLAR
+                </Typography>
+                <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ rowGap: 0.5 }}>
+                  {meds.map((m) => (
+                    <Chip key={m} label={m} size="small" variant="outlined" />
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            {prost.length > 0 && (
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  <AccessibilityNewIcon sx={{ fontSize: 12, mr: 0.5, verticalAlign: 'middle' }} />
+                  PROTEZ / CİHAZ
+                </Typography>
+                <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ rowGap: 0.5 }}>
+                  {prost.map((p) => (
+                    <Chip key={p} label={p} size="small" variant="outlined" />
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Stack>
+        )}
+
+        {matchedHere.length > 0 && (
+          <Box sx={{ mt: 2.5 }}>
+            <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1 }}>
+              <WarningAmberIcon sx={{ fontSize: 16, color: 'warning.main' }} />
+              <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                BU OLAY İÇİN EŞLEŞEN RİSKLER ({matchedHere.length})
+              </Typography>
+            </Stack>
+            <Stack spacing={1}>
+              {matchedHere.map((f, i) => (
+                <Box
+                  key={`${f.condition}-${f.category}-${i}`}
+                  sx={{
+                    p: 1.25,
+                    borderRadius: 1,
+                    bgcolor: alpha(urgencyColor, 0.06),
+                    borderLeft: `3px solid ${urgencyColor}`,
+                  }}
+                >
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                    <RiskSeverity bonus={f.bonus} />
+                    <Typography variant="body2" fontWeight={600}>{f.condition}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      × {CATEGORY_LABELS[f.category] || f.category}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary">
+                    {f.reason}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Kapat</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+const IncidentMessages = ({ incidentId, color, onMessageClick, riskFactors }) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [modalMessage, setModalMessage] = useState(null);
 
   useEffect(() => {
     if (!incidentId) return;
@@ -439,51 +655,65 @@ const IncidentMessages = ({ incidentId, color, onMessageClick }) => {
   }
 
   return (
-    <Stack spacing={1}>
-      {messages.map((m) => (
-        <Card
-          key={m.id}
-          variant="outlined"
-          sx={{
-            borderLeft: `3px solid ${color}`,
-            bgcolor: alpha(color, 0.03),
-          }}
-        >
-          <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
-            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.75, lineHeight: 1.4 }}>
-              "{m.text || '(boş mesaj)'}"
-            </Typography>
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-              <Stack direction="row" alignItems="center" spacing={0.5}>
-                <RouterIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+    <>
+      <Stack spacing={1}>
+        {messages.map((m) => (
+          <Card
+            key={m.id}
+            variant="outlined"
+            onClick={() => setModalMessage(m)}
+            sx={{
+              borderLeft: `3px solid ${color}`,
+              bgcolor: alpha(color, 0.03),
+              cursor: 'pointer',
+              transition: 'background-color 120ms',
+              '&:hover': { bgcolor: alpha(color, 0.08) },
+            }}
+          >
+            <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+              <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.75, lineHeight: 1.4 }}>
+                "{m.text || '(boş mesaj)'}"
+              </Typography>
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <RouterIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+                  <Typography variant="caption" color="text.secondary">
+                    {m.gatewayName}
+                  </Typography>
+                </Stack>
+                {m.sourceUserName && (
+                  <Typography variant="caption" color="text.secondary">
+                    · {m.sourceUserName}
+                  </Typography>
+                )}
+                <SourceBadge
+                  source={m.source}
+                  hops={m.meshHops}
+                  srcAddr={m.meshSrcAddr}
+                  msgId={m.meshMsgId}
+                  onClick={onMessageClick ? (e) => { e.stopPropagation(); onMessageClick(m); } : undefined}
+                />
+                <Box sx={{ flex: 1 }} />
+                {m.type && m.type !== 'manual_message' && (
+                  <Chip label={m.type.toUpperCase()} size="small" sx={{ height: 18, fontSize: '0.6rem' }} />
+                )}
                 <Typography variant="caption" color="text.secondary">
-                  {m.gatewayName}
+                  {fromNowSafe(m.receivedAt)}
                 </Typography>
               </Stack>
-              {m.sourceUserName && (
-                <Typography variant="caption" color="text.secondary">
-                  · {m.sourceUserName}
-                </Typography>
-              )}
-              <SourceBadge
-                source={m.source}
-                hops={m.meshHops}
-                srcAddr={m.meshSrcAddr}
-                msgId={m.meshMsgId}
-                onClick={onMessageClick ? () => onMessageClick(m) : undefined}
-              />
-              <Box sx={{ flex: 1 }} />
-              {m.type && m.type !== 'manual_message' && (
-                <Chip label={m.type.toUpperCase()} size="small" sx={{ height: 18, fontSize: '0.6rem' }} />
-              )}
-              <Typography variant="caption" color="text.secondary">
-                {fromNowSafe(m.receivedAt)}
-              </Typography>
-            </Stack>
-          </CardContent>
-        </Card>
-      ))}
-    </Stack>
+              <HealthProfileStrip health={m.sourceUserHealth} />
+            </CardContent>
+          </Card>
+        ))}
+      </Stack>
+      <MessageDetailModal
+        open={!!modalMessage}
+        onClose={() => setModalMessage(null)}
+        message={modalMessage}
+        riskFactors={riskFactors}
+        urgencyColor={color}
+      />
+    </>
   );
 };
 
@@ -581,20 +811,13 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
           <Typography variant="caption" color="text.secondary">
             ORİJİNAL MESAJLAR ({incident.n_messages})
           </Typography>
-          {onMessageClick && (
-            <Typography
-              variant="caption"
-              sx={{ color, fontWeight: 600, ml: 'auto' }}
-            >
-              "Mesh · sıçrama" rozetine tıkla → yolu izle
-            </Typography>
-          )}
         </Stack>
         <Box sx={{ mb: 2 }}>
           <IncidentMessages
             incidentId={incident.id}
             color={color}
             onMessageClick={onMessageClick}
+            riskFactors={incident.health_risk_factors}
           />
         </Box>
 
@@ -602,9 +825,15 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
           MESAJ DAĞILIMI ({incident.n_messages} toplam)
         </Typography>
         <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-          <Chip label={`${incident.n_self_reports} kendi raporu`} size="small" variant="outlined" />
-          <Chip label={`${incident.n_witness_reports} tanık`} size="small" variant="outlined" />
-          <Chip label={`${incident.n_info} bilgi`} size="small" variant="outlined" />
+          {incident.n_self_reports > 0 && (
+            <Chip label={`${incident.n_self_reports} bizzat`} size="small" variant="outlined" />
+          )}
+          {incident.n_witness_reports > 0 && (
+            <Chip label={`${incident.n_witness_reports} tanık`} size="small" variant="outlined" />
+          )}
+          {incident.n_info > 0 && (
+            <Chip label={`${incident.n_info} bilgi`} size="small" variant="outlined" />
+          )}
         </Stack>
 
         {incident.dispatched_teams && incident.dispatched_teams.length > 0 && (
@@ -619,9 +848,6 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
                   <Typography variant="body2" fontWeight={500}>
                     {TEAM_LABELS[t.team_code] || t.team_code}
                   </Typography>
-                  {t.reason && (
-                    <Typography variant="caption" color="text.secondary">— {friendlyReason(t.reason)}</Typography>
-                  )}
                 </Stack>
               ))}
             </Stack>
@@ -650,16 +876,31 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
                     {sourceGateway.name || sourceGateway.serialNumber}
                   </Typography>
                 </Stack>
-                <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Durum: <strong>{STATUS_LABELS[sourceGateway.status] || sourceGateway.status}</strong>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Pil: <strong>%{sourceGateway.battery ?? '?'}</strong>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Sinyal: <strong>{SIGNAL_LABELS[sourceGateway.signal_quality] || sourceGateway.signal_quality || '?'}</strong>
-                  </Typography>
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+                  {(() => {
+                    const b = sourceGateway.battery;
+                    const BattIcon = b == null ? BatteryFullIcon : b >= 50 ? BatteryFullIcon : b >= 20 ? Battery50Icon : Battery20Icon;
+                    const battColor = b == null ? 'text.secondary' : b >= 50 ? 'success.main' : b >= 20 ? 'warning.main' : 'error.main';
+                    return (
+                      <Stack direction="row" alignItems="center" spacing={0.4}>
+                        <BattIcon sx={{ fontSize: 16, color: battColor }} />
+                        <Typography variant="caption" fontWeight={600}>%{b ?? '?'}</Typography>
+                      </Stack>
+                    );
+                  })()}
+                  {(() => {
+                    const s = sourceGateway.signal_quality;
+                    const SigIcon = s === 'strong' ? SignalCellularAltIcon : s === 'moderate' ? SignalCellularAlt2BarIcon : SignalCellularAlt1BarIcon;
+                    const sigColor = s === 'strong' ? 'success.main' : s === 'moderate' ? 'warning.main' : 'error.main';
+                    return (
+                      <Stack direction="row" alignItems="center" spacing={0.4}>
+                        <SigIcon sx={{ fontSize: 16, color: sigColor }} />
+                        <Typography variant="caption" fontWeight={600}>
+                          {SIGNAL_LABELS[s] || s || '?'}
+                        </Typography>
+                      </Stack>
+                    );
+                  })()}
                 </Stack>
               </CardContent>
             </Card>
