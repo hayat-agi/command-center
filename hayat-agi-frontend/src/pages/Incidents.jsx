@@ -1150,6 +1150,30 @@ const Incidents = () => {
     };
   }, [sourceGateway, selectedIncident]);
 
+  // When an incident is selected, nudge the map to frame the cluster that
+  // contains the incident's uplink gateway. Bounds = all gateways in that
+  // cluster (mesh-connected to the uplink) + the incident centroid so the
+  // pin stays visible. Null while nothing is selected so the map keeps the
+  // operator's manual framing.
+  const focusBounds = useMemo(() => {
+    if (!selectedIncident || !sourceGateway) return null;
+    const cluster = clusters.find((c) => c.some((g) => g._id === sourceGateway._id));
+    const points = [];
+    if (cluster) {
+      for (const g of cluster) {
+        if (g.location?.lat != null && g.location?.lng != null) {
+          points.push([g.location.lat, g.location.lng]);
+        }
+      }
+    } else if (sourceGateway.location?.lat != null) {
+      points.push([sourceGateway.location.lat, sourceGateway.location.lng]);
+    }
+    if (selectedIncident.centroid?.lat != null && selectedIncident.centroid?.lng != null) {
+      points.push([selectedIncident.centroid.lat, selectedIncident.centroid.lng]);
+    }
+    return points.length > 0 ? points : null;
+  }, [selectedIncident, sourceGateway, clusters]);
+
   const allLines = useMemo(
     () => (sourceLink ? [...meshLines, sourceLink] : meshLines),
     [meshLines, sourceLink]
@@ -1221,6 +1245,7 @@ const Incidents = () => {
           lines={allLines}
           coverageCircles={coverageCircles}
           hopAnimation={hopAnimation}
+          focusBounds={focusBounds}
         />
       </Box>
 
