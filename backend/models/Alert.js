@@ -66,6 +66,36 @@ const alertSchema = new Schema(
       classified_at: { type: Date, default: null },
     },
 
+    // Frozen snapshot of the citizen's medical profile at the time of
+    // classification. The User document keeps the live copy; this snapshot
+    // is the audit trail — survives fusion in-memory wipes AND captures
+    // what we knew about the citizen when triage decisions were made
+    // (profile may have changed since).
+    healthProfile: {
+      type: {
+        medicalConditions: { type: [String], default: undefined },
+        medications: { type: [String], default: undefined },
+        prosthetics: { type: [String], default: undefined },
+        bloodType: { type: String, default: undefined },
+      },
+      default: null,
+    },
+
+    // Risk factors the scorer matched for THIS event's classified categories
+    // against the citizen's profile. Pre-computed by fusion so the UI can
+    // render the operational advisories (KOAH × FIRE → smoke risk, etc.)
+    // without re-running the matrix client-side AND without depending on
+    // fusion being live.
+    healthRiskFactors: {
+      type: [{
+        condition: { type: String },
+        category: { type: String },
+        bonus: { type: Number },
+        reason: { type: String },
+      }],
+      default: undefined,
+    },
+
     payload: { type: Schema.Types.Mixed },
     notes: { type: String },
     acknowledged_at: { type: Date },
