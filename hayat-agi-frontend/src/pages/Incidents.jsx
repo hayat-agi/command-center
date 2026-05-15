@@ -412,6 +412,55 @@ const IncidentCard = ({ incident, isSelected, onClick }) => {
   );
 };
 
+// Score breakdown — explains why the incident scored what it scored.
+// Renders only the non-zero contributors as labeled horizontal bars so the
+// operator sees at a glance whether the high score came from raw urgency,
+// hazard category, vulnerable group, or chronic-condition risk.
+const SCORE_LABELS = {
+  base: 'Aciliyet × Doğrulama',
+  message_count_bonus: 'Mesaj sayısı',
+  vulnerable_group_bonus: 'Hassas grup',
+  hazard_bonus: 'Tehlike (yangın / kimyasal)',
+  health_bonus: 'Sağlık riski',
+};
+
+const ScoreBreakdown = ({ total, breakdown, color }) => {
+  if (!breakdown || typeof breakdown !== 'object') return null;
+  const entries = Object.entries(breakdown).filter(([, v]) => Number(v) > 0);
+  if (entries.length === 0) return null;
+  const max = Math.max(...entries.map(([, v]) => Number(v)));
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
+        <Typography variant="caption" color="text.secondary">
+          SKOR DAĞILIMI
+        </Typography>
+        <Typography variant="caption" sx={{ fontWeight: 700, color }}>
+          Toplam: {total?.toFixed?.(2) ?? total}
+        </Typography>
+      </Stack>
+      <Stack spacing={0.5}>
+        {entries.map(([key, raw]) => {
+          const value = Number(raw);
+          const label = SCORE_LABELS[key] || key;
+          const pct = max > 0 ? (value / max) * 100 : 0;
+          return (
+            <Box key={key}>
+              <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.25 }}>
+                <Typography variant="caption" color="text.secondary">{label}</Typography>
+                <Typography variant="caption" fontWeight={600}>+{value.toFixed(2)}</Typography>
+              </Stack>
+              <Box sx={{ height: 4, bgcolor: alpha(color, 0.1), borderRadius: 2, overflow: 'hidden' }}>
+                <Box sx={{ height: '100%', width: `${pct}%`, bgcolor: color, transition: 'width 300ms' }} />
+              </Box>
+            </Box>
+          );
+        })}
+      </Stack>
+    </Box>
+  );
+};
+
 // Compact health-profile strip rendered inline under each message card.
 // Shows non-empty fields only — blood type chip + first 3 condition/med/
 // prosthetic labels with a "+N" overflow indicator. Click the parent card
@@ -835,6 +884,12 @@ const IncidentDetail = ({ incident, onBack, sourceGateway, onClosed, onMessageCl
             <Chip label={`${incident.n_info} bilgi`} size="small" variant="outlined" />
           )}
         </Stack>
+
+        <ScoreBreakdown
+          total={incident.score}
+          breakdown={incident.score_breakdown}
+          color={color}
+        />
 
         {incident.dispatched_teams && incident.dispatched_teams.length > 0 && (
           <>
