@@ -534,6 +534,19 @@ exports.addDisasterEvent = async (req, res) => {
       ? 'mesh'
       : 'direct';
 
+    // Temporary debug: dump everything firmware sends on mesh uplinks so we
+    // can find an existing hop-chain header (if any) before asking firmware
+    // to add one. Revert once we've captured a few samples.
+    if (source === 'mesh') {
+      const meshHeaders = Object.fromEntries(
+        Object.entries(req.headers).filter(([k]) =>
+          /^x-(mesh|source|forwarded)/i.test(k)
+        )
+      );
+      console.log('[mesh-uplink debug] headers=', JSON.stringify(meshHeaders),
+                  'body=', JSON.stringify(req.body));
+    }
+
     const meshHopsHeader = req.get('X-Mesh-Hops');
     const meshHops = meshHopsHeader != null && meshHopsHeader !== ''
       ? parseInt(meshHopsHeader, 10)
