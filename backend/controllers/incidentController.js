@@ -89,7 +89,7 @@ exports.getIncidentMessages = async (req, res) => {
       .map((s) => new mongoose.Types.ObjectId(s));
 
     const alerts = await Alert.find({ _id: { $in: objectIds } })
-      .populate('source_user', 'name surname')
+      .populate('source_user', 'name surname medicalConditions medications prosthetics bloodType')
       .populate('gateway', 'name serialNumber')
       .sort({ createdAt: 1 })
       .lean();
@@ -119,6 +119,23 @@ exports.getIncidentMessages = async (req, res) => {
           gatewaySerial: gw?.serialNumber || a.device_id,
           sourceUserName: a.source_user
             ? `${a.source_user.name || ''} ${a.source_user.surname || ''}`.trim()
+            : null,
+          // Health profile snapshot — only surfaced when the citizen has
+          // at least one entry on file so the UI can simply check `!!`.
+          // Frontend matches against incident.health_risk_factors to show
+          // which of these conditions actually triggered a risk bonus.
+          sourceUserHealth: a.source_user && (
+            (a.source_user.medicalConditions?.length ?? 0) > 0 ||
+            (a.source_user.medications?.length ?? 0) > 0 ||
+            (a.source_user.prosthetics?.length ?? 0) > 0 ||
+            a.source_user.bloodType
+          )
+            ? {
+                medicalConditions: a.source_user.medicalConditions || [],
+                medications: a.source_user.medications || [],
+                prosthetics: a.source_user.prosthetics || [],
+                bloodType: a.source_user.bloodType || null,
+              }
             : null,
           sentAt: a.payload?.sentAt || null,
           receivedAt: a.createdAt,
