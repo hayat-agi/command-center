@@ -283,6 +283,15 @@ exports.heartbeat = async (req, res) => {
     );
 
     if (!gateway) {
+      // Operationally useful signal: a device is sending heartbeats but no
+      // gateway with that serial exists. Either the firmware reports a
+      // different serial format than what was registered (e.g. lowercase
+      // MAC, no colons), or the gateway was deleted out from under it.
+      // Log the full body so we can spot misconfigured devices in prod.
+      const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+      console.warn(
+        `[heartbeat] unknown serialNumber from ip=${ip}; body=${JSON.stringify(req.body)}`
+      );
       return res.status(404).json({
         message: 'Bu seri numarasıyla kayıtlı cihaz yok.',
       });
