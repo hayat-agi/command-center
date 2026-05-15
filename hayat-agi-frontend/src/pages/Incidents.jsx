@@ -81,6 +81,7 @@ import {
   computeMeshLines,
 } from '../utils/meshTopology';
 import { synthesizeHopPath } from '../utils/synthesizeHopPath';
+import { resolveHopPath } from '../utils/resolveHopPath';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/tr';
@@ -1167,19 +1168,30 @@ const Incidents = () => {
   };
 
   // Triggered when the operator clicks the "Mesh · N sıçrama" badge in the
-  // message detail panel. Synthesizes the hop chain from the source gateway's
-  // cluster and kicks off the MeshHopAnimation overlay for ~5s. Map zoom/
-  // pan is intentionally untouched so the operator's framing survives the
-  // animation playback.
+  // message detail panel. Tries to resolve the real hop endpoints
+  // (meshSrcAddr -> gateway.loraAddress) first; falls back to the synthetic
+  // cluster-based path when the binding isn't set yet. Either way kicks off
+  // the MeshHopAnimation overlay for ~5s. Map zoom/pan is intentionally
+  // untouched so the operator's framing survives the animation playback.
   const handleMessageClick = useCallback(
     (message) => {
       if (!sourceGateway || !selectedIncident) return;
-      const path = synthesizeHopPath({
+      let path = null;
+      const resolved = resolveHopPath({
         sourceGateway,
+        meshSrcAddr: message?.meshSrcAddr,
         gateways,
-        meshHops: message?.meshHops ?? 1,
-        clusters,
       });
+      if (resolved) {
+        path = resolved.path;
+      } else {
+        path = synthesizeHopPath({
+          sourceGateway,
+          gateways,
+          meshHops: message?.meshHops ?? 1,
+          clusters,
+        });
+      }
       if (!path || path.length < 2) return;
       setHopAnimation({
         path,
