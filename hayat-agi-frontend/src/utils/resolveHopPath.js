@@ -23,15 +23,15 @@
 // the parsed array (see backend X-Mesh-Path → alert.meshHopsPath field).
 
 // Physical mesh layout (campus deployment, May 2026):
-//   0x0005 (Rektörlük) → 0x0003 (Hazırlık) → 0x0002 (L Blok)
-//                                          → 0x0001 (M Blok)
+//   0x0003 (Hazırlık) → 0x0005 (Rektörlük) → 0x0001 (M Blok)
+//                                          → 0x0002 (L Blok)
 //                                          → 0x0004 (Ortak Alan, uplink)
 // Each entry: source addr → ordered chain ending at the uplink.
 const KNOWN_TOPOLOGY = {
-  '0x0005': ['0x0005', '0x0003', '0x0002', '0x0001', '0x0004'],
-  '0x0003': ['0x0003', '0x0002', '0x0001', '0x0004'],
-  '0x0002': ['0x0002', '0x0001', '0x0004'],
-  '0x0001': ['0x0001', '0x0004'],
+  '0x0003': ['0x0003', '0x0005', '0x0001', '0x0002', '0x0004'],
+  '0x0005': ['0x0005', '0x0001', '0x0002', '0x0004'],
+  '0x0001': ['0x0001', '0x0002', '0x0004'],
+  '0x0002': ['0x0002', '0x0004'],
 };
 
 const normalize = (value) => {
