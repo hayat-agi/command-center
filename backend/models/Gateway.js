@@ -50,6 +50,16 @@ const gatewaySchema = new Schema({
     unique: true,
     required: true
   },
+  // LoRa mesh node address (e.g. '0x0002'). Independent of BLE MAC /
+  // serialNumber because the mesh layer uses 16-bit IDs assigned at
+  // pairing time. Used to resolve `meshSrcAddr` on incoming alerts back
+  // to a physical gateway with a known location, which is what the
+  // frontend hop animation needs.
+  loraAddress: {
+    type: String,
+    trim: true,
+    default: null,
+  },
   status: {
     type: String,
     enum: ['active', 'inactive', 'low_battery'],
@@ -102,6 +112,15 @@ const gatewaySchema = new Schema({
 }, {
   timestamps: true
 });
+
+// LoRa node addresses must be unique across gateways when set — two
+// physical nodes can't share the same mesh ID. Sparse so unset values
+// (the default for any gateway whose firmware hasn't reported a LoRa
+// addr yet) don't conflict.
+gatewaySchema.index(
+  { loraAddress: 1 },
+  { unique: true, sparse: true, background: true }
+);
 
 // Tüm 'registered_users' dizilerindeki 'tcNumber' alanı benzersiz olsun (Boş değilse)
 gatewaySchema.index(
