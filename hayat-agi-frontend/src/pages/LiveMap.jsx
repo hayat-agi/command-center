@@ -47,7 +47,7 @@ import {
 // Visual-only coverage radius for the on-map circles. Cluster/mesh-line math
 // keeps using the realistic DEFAULT_COVERAGE_M (350m). Mirrors the same
 // pattern used in Incidents.jsx so the two map views look consistent.
-const COVERAGE_DISPLAY_M = 120;
+const COVERAGE_DISPLAY_M = 50;
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/tr';
@@ -217,9 +217,6 @@ const MeshTopologyCard = ({ gateways, clusters, relaySuggestions }) => {
             Ağ Topolojisi
           </Typography>
           <Box sx={{ flex: 1 }} />
-          <Typography variant="caption" color="text.secondary">
-            {DEFAULT_COVERAGE_M}m kapsama
-          </Typography>
         </Stack>
       </CardContent>
       <Box sx={{ flex: 1, minHeight: 480, position: 'relative' }}>
