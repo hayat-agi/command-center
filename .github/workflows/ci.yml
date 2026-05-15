@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel older runs on the same ref when a new commit arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (node syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: install
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: syntax check every .js file
+        working-directory: backend
+        # node --check parses the file but doesn't execute it; catches the
+        # class of bug that took the prod backend down on 2026-05-13.
+        run: |
+          set -e
+          find . -type f -name '*.js' \
+            -not -path './node_modules/*' \
+            -not -path './scripts/seeds/*' \
+            -print0 | xargs -0 -n1 node --check
+
+  frontend:
+    name: frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hayat-agi-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: hayat-agi-frontend/package-lock.json
+
+      - name: install
+        run: npm ci --no-audit --no-fund
+
+      - name: eslint
+        # `eslint .` is the script defined in package.json.
+        run: npm run lint
+
+      - name: build (vite)
+        # Catches import/typing/syntax errors that eslint alone would miss.
+        # API base is a placeholder for the CI smoke build; real deploys
+        # set this via the build command on the deploying host.
+        env:
+          VITE_API_BASE_URL: http://ci-placeholder.invalid/api
+        run: npm run build
