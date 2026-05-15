@@ -61,7 +61,7 @@ exports.getUserGateways = async (req, res) => {
 // Create New Gateway
 exports.createGateway = async (req, res) => {
   try {
-    const { name, serialNumber } = req.body;
+    const { name, serialNumber, loraAddress } = req.body;
     const rawLatitude = req.body.latitude;
     const rawLongitude = req.body.longitude;
     const explicitLatitude = rawLatitude === undefined || rawLatitude === null || rawLatitude === ''
@@ -152,6 +152,9 @@ exports.createGateway = async (req, res) => {
       owner: req.user._id,
       name,
       serialNumber,
+      loraAddress: typeof loraAddress === 'string' && loraAddress.trim()
+        ? loraAddress.trim()
+        : null,
 
       address: {
         street: address.street,
@@ -316,7 +319,7 @@ exports.updateGateway = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, address, deviceCount, latitude, longitude, locationAddress, serialNumber } = req.body || {};
+    const { name, address, deviceCount, latitude, longitude, locationAddress, serialNumber, loraAddress } = req.body || {};
 
     const gateway = await findGatewayByIdentity(id, getOwnerFilter(req));
 
@@ -329,6 +332,13 @@ exports.updateGateway = async (req, res) => {
 
     if (typeof serialNumber === 'string' && serialNumber.trim()) {
       gateway.serialNumber = serialNumber.trim();
+    }
+
+    if (loraAddress !== undefined) {
+      // Explicit null/empty string clears the binding; otherwise trim + store.
+      gateway.loraAddress = (typeof loraAddress === 'string' && loraAddress.trim())
+        ? loraAddress.trim()
+        : null;
     }
 
     if (deviceCount !== undefined) {
