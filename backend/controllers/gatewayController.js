@@ -527,6 +527,22 @@ exports.addDisasterEvent = async (req, res) => {
 
     const trimmedMessage = typeof message === 'string' ? message.trim() : null;
 
+    // Drop earthquake-detected system events — the mobile foreground service
+    // broadcasts these on every shake, but they're peer-to-peer coordination
+    // signals, not operator-facing help requests. Returning 200 (not 4xx) so
+    // the firmware doesn't retry. Persist them to a side collection later if
+    // we ever need shake-analytics; for now they just clutter the operator
+    // dashboard during demos.
+    const SYSTEM_EVENT_PATTERNS = [/^earthquake_detected$/i];
+    if (trimmedMessage && SYSTEM_EVENT_PATTERNS.some((re) => re.test(trimmedMessage))) {
+      console.log(`[disaster] skipping system event "${trimmedMessage}" from gateway ${gateway.serialNumber}`);
+      return res.status(200).json({
+        skipped: true,
+        reason: 'system_event',
+        message: trimmedMessage,
+      });
+    }
+
     // Delivery-path headers set by the gateway uplink firmware. Phone-direct
     // POSTs don't set these → source falls back to 'direct'.
     const sourceHeader = (req.get('X-Source') || '').toLowerCase();
