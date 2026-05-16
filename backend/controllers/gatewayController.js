@@ -569,6 +569,32 @@ exports.addDisasterEvent = async (req, res) => {
       : null;
     const meshMsgId = req.get('X-Mesh-MsgId') || null;
 
+    // Firmware ships the full traversed chain (source..gateway) as a
+    // comma-separated hex string in the JSON body, e.g.
+    // "0x0003,0x0005,0x0001,0x0002,0x0004". Validate strictly and store
+    // as an array; reject any malformed input (length, format) by
+    // falling back to null so it never poisons downstream consumers.
+    const meshHopPathRaw = req.body && typeof req.body.meshHopPath === 'string'
+      ? req.body.meshHopPath.trim()
+      : '';
+    let meshHopPath = null;
+    if (meshHopPathRaw) {
+      const candidates = meshHopPathRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const HEX_ADDR = /^0x[0-9A-Fa-f]{4}$/;
+      if (
+        candidates.length > 0 &&
+        candidates.length <= 8 &&
+        candidates.every((s) => HEX_ADDR.test(s))
+      ) {
+        // Normalize hex to uppercase digits so "0x000a" and "0x000A"
+        // compare equal downstream.
+        meshHopPath = candidates.map((s) => '0x' + s.slice(2).toUpperCase());
+      }
+    }
+
     // Defensive dedup against firmware double-uplinks: if the same mesh
     // packet (matching X-Mesh-MsgId) hit us within the last 30s, return
     // the existing alert instead of creating a second one.
@@ -602,6 +628,7 @@ exports.addDisasterEvent = async (req, res) => {
       meshHops:    Number.isFinite(meshHops) ? meshHops : null,
       meshSrcAddr: req.get('X-Mesh-Src') || null,
       meshMsgId,
+      meshHopPath,
 
       // Legacy payload kept so existing readers don't break; will be
       // dropped once all consumers move to top-level fields.
