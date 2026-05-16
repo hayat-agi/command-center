@@ -55,6 +55,11 @@ const alertSchema = new Schema(
     meshHops:    { type: Number, default: null },
     meshSrcAddr: { type: String, default: null },
     meshMsgId:   { type: String, default: null },
+    // Ordered chain of node addresses this packet traversed
+    // (path[0]=source, path[-1]=gateway). Each entry is a hex string
+    // like "0x0003". Populated by firmware when the packet hop_path field
+    // is present; null for legacy firmware that uplinks without it.
+    meshHopPath: { type: [String], default: null },
 
     // Written back by the fusion classifier once an alert has been scored.
     // Stays null until the model has run.
