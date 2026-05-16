@@ -145,6 +145,7 @@ exports.getIncidentMessages = async (req, res) => {
           meshHops: a.meshHops ?? null,
           meshSrcAddr: a.meshSrcAddr || null,
           meshMsgId: a.meshMsgId || null,
+          meshHopPath: a.meshHopPath || null,
         };
       }),
     });
