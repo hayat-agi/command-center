@@ -595,6 +595,21 @@ exports.addDisasterEvent = async (req, res) => {
       }
     }
 
+    // Firmware bug workaround: the gateway's mesh_link.cpp final-delivery
+    // branch is supposed to append its own LOCAL_ADDR before returning,
+    // but in practice the path arrives without the gateway entry. Patch
+    // it here so downstream consumers (hop animation, badge) see a
+    // complete chain. Safe no-op when the firmware already appended.
+    if (meshHopPath && meshHopPath.length > 0 && gateway.loraAddress) {
+      const gwAddrMatch = String(gateway.loraAddress).match(/^0x([0-9A-Fa-f]{1,4})$/);
+      if (gwAddrMatch) {
+        const gwAddr = '0x' + gwAddrMatch[1].padStart(4, '0').toUpperCase();
+        if (meshHopPath[meshHopPath.length - 1] !== gwAddr) {
+          meshHopPath = [...meshHopPath, gwAddr];
+        }
+      }
+    }
+
     // Defensive dedup against firmware double-uplinks: if the same mesh
     // packet (matching X-Mesh-MsgId) hit us within the last 30s, return
     // the existing alert instead of creating a second one.
