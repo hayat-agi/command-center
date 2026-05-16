@@ -5,28 +5,32 @@
 //     incident.gateway). This is where the LoRa-to-HTTP boundary happens.
 //   - meshSrcAddr:   the LoRa mesh source address on the alert (e.g.
 //     '0x0002'). Identifies the physical sender, NOT the uplink.
+//   - meshHopPath:   optional ordered array of hex addresses representing
+//     the full chain the packet actually traversed
+//     (e.g. ['0x0003','0x0005','0x0001','0x0002','0x0004']). Populated by
+//     firmware that carries hop_path in the mesh packet; absent on legacy
+//     firmware uplinks.
 //   - gateways:      the full gateway list (each may carry .loraAddress).
 //
 // Returns:
-//   - { kind: 'real', path: [...] } when meshSrcAddr resolves to a known
-//     gateway with location. path = [sender, ...relays, uplink].
+//   - { kind: 'real', path: [...] } when we can resolve at least two
+//     points. path = [sender, ...relays, uplink], plotted via gateway
+//     locations.
 //   - null when we don't have enough data — caller should fall back to
 //     synthesizeHopPath for the demo-style placeholder animation.
 //
-// Hop chain resolution:
-// The firmware currently uplinks only meshSrcAddr (start) and hop_count.
-// The intermediate node addresses are NOT in the HTTP payload because the
-// mesh_packet struct holds prev_hop (last forwarder) but not the full
-// path. Until the firmware ships full-chain in a header, we use the
-// KNOWN_TOPOLOGY hint below to draw the animation through the physically
-// correct relays. When firmware ships hop_path, replace this table with
-// the parsed array (see backend X-Mesh-Path → alert.meshHopsPath field).
+// Resolution order:
+//   1. meshHopPath array from firmware (real chain) when present
+//   2. KNOWN_TOPOLOGY hint keyed by meshSrcAddr (legacy fallback for
+//      firmware that doesn't ship hop_path yet)
+//   3. Straight line sender → uplink (last-resort fallback)
 
-// Physical mesh layout (campus deployment, May 2026):
+// Physical mesh layout (campus deployment, May 2026) — used only as a
+// fallback for legacy firmware uplinks that don't carry meshHopPath.
+// Each entry: source addr → ordered chain ending at the uplink.
 //   0x0003 (Hazırlık) → 0x0005 (Rektörlük) → 0x0001 (M Blok)
 //                                          → 0x0002 (L Blok)
 //                                          → 0x0004 (Ortak Alan, uplink)
-// Each entry: source addr → ordered chain ending at the uplink.
 const KNOWN_TOPOLOGY = {
   '0x0003': ['0x0003', '0x0005', '0x0001', '0x0002', '0x0004'],
   '0x0005': ['0x0005', '0x0001', '0x0002', '0x0004'],
@@ -62,11 +66,36 @@ const gatewayByLora = (gateways, addr) => {
   ) || null;
 };
 
-export const resolveHopPath = ({ sourceGateway, meshSrcAddr, gateways }) => {
+const chainToPath = (chain, gateways) => {
+  if (!Array.isArray(chain) || chain.length < 2) return null;
+  const path = [];
+  for (const addr of chain) {
+    const g = gatewayByLora(gateways, addr);
+    if (g) path.push(gatewayPoint(g));
+  }
+  return path.length >= 2 ? path : null;
+};
+
+export const resolveHopPath = ({
+  sourceGateway,
+  meshSrcAddr,
+  meshHopPath,
+  gateways,
+}) => {
   if (!isPlottable(sourceGateway)) return null;
+  if (!Array.isArray(gateways) || gateways.length === 0) return null;
+
+  // Preferred path: firmware-supplied hop_path. Plot it directly and
+  // skip both the KNOWN_TOPOLOGY guess and the sender-vs-uplink heuristic
+  // — if the firmware says the packet traversed exactly these nodes, we
+  // draw exactly those.
+  if (Array.isArray(meshHopPath) && meshHopPath.length >= 2) {
+    const realPath = chainToPath(meshHopPath, gateways);
+    if (realPath) return { kind: 'real', path: realPath };
+  }
+
   const wanted = normalize(meshSrcAddr);
   if (!wanted) return null;
-  if (!Array.isArray(gateways) || gateways.length === 0) return null;
 
   // The uplink itself sometimes appears as meshSrcAddr when meshHops === 0
   // (the sender IS the uplink, no relay). In that case there's no real
@@ -77,24 +106,14 @@ export const resolveHopPath = ({ sourceGateway, meshSrcAddr, gateways }) => {
   if (!sender) return null;
   if (sender._id === sourceGateway._id) return null;
 
-  // If we have a known multi-hop topology for this source, walk it through
-  // each LoRa address and collect the gateway points. Skip addresses that
-  // don't map to a registered gateway (operator hasn't bound them yet) so
-  // a partial chain still draws.
+  // Legacy fallback: walk the hard-coded KNOWN_TOPOLOGY chain. Used only
+  // for firmware uplinks that predate the meshHopPath field.
   const knownChain = KNOWN_TOPOLOGY[wanted];
-  if (Array.isArray(knownChain) && knownChain.length >= 2) {
-    const path = [];
-    for (const addr of knownChain) {
-      const g = gatewayByLora(gateways, addr);
-      if (g) path.push(gatewayPoint(g));
-    }
-    if (path.length >= 2) {
-      return { kind: 'real', path };
-    }
-  }
+  const knownPath = chainToPath(knownChain, gateways);
+  if (knownPath) return { kind: 'real', path: knownPath };
 
-  // Fallback: no topology hint for this source — draw the two known
-  // endpoints (sender → uplink) as a straight line.
+  // Last-resort fallback: no topology hint and no real path — draw the
+  // two known endpoints (sender → uplink) as a straight line.
   return {
     kind: 'real',
     path: [gatewayPoint(sender), gatewayPoint(sourceGateway)],

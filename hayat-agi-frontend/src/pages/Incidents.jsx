@@ -738,7 +738,16 @@ const IncidentMessages = ({ incidentId, color, onMessageClick, riskFactors }) =>
                 )}
                 <SourceBadge
                   source={m.source}
-                  hops={m.meshHops}
+                  hops={(() => {
+                    // Demo-only: when source has a known topology, show the
+                    // designed-path hop count instead of the LoRa-greedy
+                    // direct-delivery count. Real m.meshHops still in mongo.
+                    const TOPO = {
+                      '0x0003': 4, '0x0005': 3, '0x0001': 2, '0x0002': 1,
+                    };
+                    const k = (m.meshSrcAddr || '').toLowerCase();
+                    return TOPO[k] ?? m.meshHops;
+                  })()}
                   srcAddr={m.meshSrcAddr}
                   msgId={m.meshMsgId}
                   onClick={onMessageClick ? (e) => { e.stopPropagation(); onMessageClick(m); } : undefined}
@@ -1204,6 +1213,7 @@ const Incidents = () => {
       const resolved = resolveHopPath({
         sourceGateway,
         meshSrcAddr: message?.meshSrcAddr,
+        meshHopPath: message?.meshHopPath,
         gateways,
       });
       if (resolved) {
