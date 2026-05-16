@@ -77,6 +77,7 @@ import { getIncidents, getIncidentMessages, closeIncident } from '../services/in
 import { getGateways } from '../api/gatewayService';
 import {
   DEFAULT_COVERAGE_M,
+  adaptiveCoverageM,
   computeClusters,
   computeMeshLines,
 } from '../utils/meshTopology';
@@ -111,11 +112,11 @@ const URGENCY_LABELS = {
 
 const URGENCY_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
-// Visual-only coverage radius used when drawing the on-map circles. The
-// actual mesh-reach math (clusters, mesh lines) still uses DEFAULT_COVERAGE_M
-// (the realistic 350m number) — this is purely so the painted circles don't
-// dominate the map at campus zoom and the hop animation reads cleanly.
-const COVERAGE_DISPLAY_M = 50;
+// Visual-only coverage radius is computed adaptively from the current
+// fleet's placement (see adaptiveCoverageM in meshTopology). The actual
+// mesh-reach math (clusters, mesh lines) still uses DEFAULT_COVERAGE_M
+// (the realistic 350m number) so cluster logic follows LoRa physics, not
+// the painted circles.
 
 const GATEWAY_INACTIVE_COLOR = '#9e9e9e';
 const GATEWAY_ISOLATED_COLOR = '#ef6c00';
@@ -1117,7 +1118,11 @@ const Incidents = () => {
     [gateways, gatewayMeta, sourceGateway]
   );
 
-  // Coverage circles per gateway, color-matched to cluster.
+  // Coverage circles per gateway, color-matched to cluster. Radius adapts
+  // to the actual fleet spread so the painted circles always overlap and
+  // the operator can read the network as connected even when nodes are
+  // placed far apart for demo purposes.
+  const visualCoverageM = useMemo(() => adaptiveCoverageM(gateways), [gateways]);
   const coverageCircles = useMemo(
     () =>
       gateways
@@ -1127,13 +1132,13 @@ const Incidents = () => {
           return {
             lat: g.location.lat,
             lng: g.location.lng,
-            radiusMeters: COVERAGE_DISPLAY_M,
+            radiusMeters: visualCoverageM,
             color: meta?.color || GATEWAY_ISOLATED_COLOR,
             fillOpacity: meta?.isIsolated ? 0.12 : 0.08,
             opacity: 0.55,
           };
         }),
-    [gateways, gatewayMeta]
+    [gateways, gatewayMeta, visualCoverageM]
   );
 
   const meshLines = useMemo(() => colorMeshLines(clusters, DEFAULT_COVERAGE_M), [clusters]);

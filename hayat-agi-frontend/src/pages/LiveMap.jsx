@@ -39,15 +39,11 @@ import MapComponent from '../components/MapComponent';
 import { getGateways } from '../api/gatewayService';
 import {
   DEFAULT_COVERAGE_M,
+  adaptiveCoverageM,
   computeClusters,
   computeMeshLines,
   suggestRelayPlacements,
 } from '../utils/meshTopology';
-
-// Visual-only coverage radius for the on-map circles. Cluster/mesh-line math
-// keeps using the realistic DEFAULT_COVERAGE_M (350m). Mirrors the same
-// pattern used in Incidents.jsx so the two map views look consistent.
-const COVERAGE_DISPLAY_M = 50;
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/tr';
@@ -179,7 +175,10 @@ const MeshTopologyCard = ({ gateways, clusters, relaySuggestions }) => {
 
   // Cover circles for ALL gateways including inactive — operators need to
   // see the registered footprint while planning relays, not just the
-  // currently-live nodes. Inactive ones render dimmer.
+  // currently-live nodes. Inactive ones render dimmer. Radius scales with
+  // the actual fleet spread so circles always overlap visually regardless
+  // of how widely the operator places the nodes.
+  const visualCoverageM = useMemo(() => adaptiveCoverageM(gateways), [gateways]);
   const coverageCircles = useMemo(
     () =>
       gateways
@@ -191,13 +190,13 @@ const MeshTopologyCard = ({ gateways, clusters, relaySuggestions }) => {
           return {
             lat: g.location.lat,
             lng: g.location.lng,
-            radiusMeters: COVERAGE_DISPLAY_M,
+            radiusMeters: visualCoverageM,
             color,
             fillOpacity: isInactive ? 0.05 : meta?.isIsolated ? 0.12 : 0.08,
             opacity: isInactive ? 0.3 : 0.55,
           };
         }),
-    [gateways, gatewayMeta]
+    [gateways, gatewayMeta, visualCoverageM]
   );
 
   const mapItems = gateways.map((g) => ({

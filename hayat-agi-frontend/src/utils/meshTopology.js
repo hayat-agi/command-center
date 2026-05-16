@@ -3,6 +3,35 @@
 
 export const DEFAULT_COVERAGE_M = 350;
 
+// Adaptive visual radius derived from actual gateway placement: each
+// gateway's circle reaches at least its nearest neighbor (plus a small
+// buffer) so circles always overlap visually, no matter how far the
+// operator spreads the fleet. Cluster math still uses
+// DEFAULT_COVERAGE_M — those rules follow LoRa physics, not styling.
+export const adaptiveCoverageM = (
+  gateways,
+  { minM = 50, maxM = 2000, bufferRatio = 1.1 } = {}
+) => {
+  const valid = (gateways || []).filter(
+    (g) => g.location?.lat != null && g.location?.lng != null
+  );
+  if (valid.length < 2) return minM;
+
+  let maxNearest = 0;
+  for (const g of valid) {
+    let nearest = Infinity;
+    for (const other of valid) {
+      if (g._id === other._id) continue;
+      const d = haversineM(g.location, other.location);
+      if (d < nearest) nearest = d;
+    }
+    if (Number.isFinite(nearest) && nearest > maxNearest) maxNearest = nearest;
+  }
+
+  if (maxNearest === 0) return minM;
+  return Math.min(maxM, Math.max(minM, Math.round(maxNearest * bufferRatio)));
+};
+
 // Two gateways are reachable directly when their coverage circles overlap,
 // i.e. their centers are within 2 × coverage. A relay sitting between them
 // joins them when each leg ≤ 1 × coverage.
